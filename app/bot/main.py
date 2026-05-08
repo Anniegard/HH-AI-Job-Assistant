@@ -37,7 +37,7 @@ _sheets = SheetsClient()
 def _buttons(vacancy_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton("👍 Next", callback_data="next"), InlineKeyboardButton("👎 Hide", callback_data=f"hide:{vacancy_id}")],
-         [InlineKeyboardButton("📌 Save", callback_data=f"save:{vacancy_id}")]]
+         [InlineKeyboardButton("📌 Save", callback_data=f"save:{vacancy_id}"), InlineKeyboardButton("✉", callback_data="coverletter")]]
     )
 
 
@@ -122,6 +122,12 @@ async def cmd_hide(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await _show_next(update, update.effective_chat.id, ctx)
 
 
+
+
+async def cmd_coverletter(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text("Функция будет доступна на Stage 3")
+
+
 async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -146,6 +152,8 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             if cur and cur.id == vacancy_id:
                 _sheets.update_status(cur.url, "hidden")
         await _show_next(update, update.effective_chat.id, ctx)
+    elif action == "coverletter":
+        await query.message.reply_text("Функция будет доступна на Stage 3")
 
 
 def build_app() -> Application:
@@ -158,6 +166,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("next", cmd_next))
     app.add_handler(CommandHandler("save", cmd_save))
     app.add_handler(CommandHandler("hide", cmd_hide))
+    app.add_handler(CommandHandler("coverletter", cmd_coverletter))
     app.add_handler(CallbackQueryHandler(on_button))
     return app
 
