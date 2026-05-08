@@ -31,10 +31,10 @@ _state: dict[int, dict] = defaultdict(_new_state)
 _scorer = ScoringEngine()
 
 
-def _buttons() -> InlineKeyboardMarkup:
+def _buttons(vacancy_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("👍 Next", callback_data="next"), InlineKeyboardButton("👎 Hide", callback_data="hide")],
-         [InlineKeyboardButton("📌 Save", callback_data="save")]]
+        [[InlineKeyboardButton("👍 Next", callback_data="next"), InlineKeyboardButton("👎 Hide", callback_data=f"hide:{vacancy_id}")],
+         [InlineKeyboardButton("📌 Save", callback_data=f"save:{vacancy_id}")]]
     )
 
 
@@ -64,7 +64,12 @@ async def _show_next(update: Update, chat_id: int, ctx: ContextTypes.DEFAULT_TYP
             score_line += f"\nПочему: {', '.join(reasons[:3])}"
 
         target = update.message if update.message else update.callback_query.message
-        await target.reply_text(vacancy.short_text() + score_line, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=_buttons())
+        await target.reply_text(
+            vacancy.short_text() + score_line,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+            reply_markup=_buttons(vacancy.id),
+        )
         return
 
     target = update.message if update.message else update.callback_query.message
@@ -110,19 +115,20 @@ async def cmd_hide(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    if query.data == "next":
+
+    action, _, vacancy_id = (query.data or "").partition(":")
+
+    if action == "next":
         await _show_next(update, update.effective_chat.id, ctx)
-    elif query.data == "save":
+    elif action == "save":
         st = _state[update.effective_chat.id]
-        cur = st.get("current")
-        if cur:
-            st["saved"].add(cur.id)
+        if vacancy_id:
+            st["saved"].add(vacancy_id)
             await query.message.reply_text("📌 Сохранено")
-    elif query.data == "hide":
+    elif action == "hide":
         st = _state[update.effective_chat.id]
-        cur = st.get("current")
-        if cur:
-            st["hidden"].add(cur.id)
+        if vacancy_id:
+            st["hidden"].add(vacancy_id)
         await _show_next(update, update.effective_chat.id, ctx)
 
 
