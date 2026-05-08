@@ -21,7 +21,21 @@ class Settings(BaseSettings):
     # OpenAI
     openai_api_key: str = ""
     # Overridable via USER_PROFILE in .env
-    user_profile: str = "Python backend developer (FastAPI, Telegram bots, AI automation)."
+    user_profile: str = (
+        "Python/FastAPI automation developer with 3+ years of experience "
+        "building production bots and data pipelines. "
+        "Key projects: bot-mont-shk (Wildberries warehouse loss analytics "
+        "automation -- tracks shortages, auto-generates claims, integrates "
+        "with Google Sheets and Yandex Disk API); "
+        "Habr Tech Radar Bot (Telegram bot that aggregates and ranks tech "
+        "articles from Habr); "
+        "anniland.ru (web platform with AI assistant demo). "
+        "Stack: Python, FastAPI, aiogram/python-telegram-bot, "
+        "Google Sheets API, Yandex Disk API, OpenAI API, PostgreSQL, Docker. "
+        "Strong focus on AI automation workflows and Telegram/Web tooling. "
+        "Looking for Python backend or automation roles involving bots, "
+        "AI integration, or data pipelines."
+    )
 
     # Google Sheets
     google_sheet_id: str = ""

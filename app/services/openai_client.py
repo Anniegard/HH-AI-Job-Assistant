@@ -10,20 +10,29 @@ class OpenAIClientError(RuntimeError):
 
 
 class OpenAIClient:
-    def __init__(self, api_key=None, model="gpt-4o-mini"):
+    def __init__(self, api_key: str | None = None, model: str = "gpt-4o-mini") -> None:
         self._api_key = api_key or settings.openai_api_key
         self._model = model
 
-    def generate_cover_letter(self, *, vacancy_title, company, requirements="", user_profile=""):
+    def generate_cover_letter(
+        self,
+        *,
+        vacancy_title: str,
+        company: str,
+        requirements: str = "",
+        user_profile: str = "",
+    ) -> str:
         if not self._api_key:
             raise OpenAIClientError("OPENAI_API_KEY not set. Add key to .env")
 
         client = OpenAI(api_key=self._api_key)
 
         prompt = (
-            "Generate a short cover letter for a job application on HH.ru. "
-            "Style: confident, polite, no AI cliches, no filler. "
-            "Length: 4-6 sentences, Russian language.\n\n"
+            "Write a short cover letter in Russian for a job application on HH.ru. "
+            "IMPORTANT: the entire letter must be written in Russian. "
+            "Style: confident, specific, polite -- no AI cliches, no filler phrases. "
+            "Length: 4-6 sentences. Highlight relevant experience from the candidate "
+            "profile that matches the vacancy requirements.\n\n"
             f"Vacancy: {vacancy_title}\n"
             f"Company: {company}\n"
             f"Requirements: {requirements or 'not specified'}\n"

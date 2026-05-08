@@ -6,6 +6,18 @@ All notable changes to this project will be documented in this file.
 
 ## [unreleased] — 2026-05-08
 
+### Polish after Stage 3
+
+- `app/bot/main.py` — все пользовательские сообщения переведены на русский (кнопки, статусы, ошибки, заголовок письма)
+- `app/core/config.py` — `user_profile` заменён на реальный профиль Дениса (bot-mont-shk, Habr Tech Radar Bot, anniland.ru, полный стек)
+- `app/services/openai_client.py` — восстановлены type hints; промпт усилен явным требованием русского языка и акцентом на релевантный опыт
+- `app/services/sheets_client.py` — восстановлены type hints (`list[Any]`, `set[str]`)
+- `app/services/crm_mapper.py` — восстановлены type hints (`list[str]` для `reasons` и возвращаемого значения)
+
+---
+
+## [unreleased] — 2026-05-08
+
 ### Stage 3 — AI Layer
 
 - `app/services/openai_client.py` — исправлен API-вызов: `responses.create` → `chat.completions.create` (совместимость с openai 1.x); `max_output_tokens` → `max_tokens`

@@ -34,7 +34,7 @@ class SheetsClient:
     def _values(self):
         return self._get_service().spreadsheets().values()
 
-    def append_vacancy(self, row: list) -> None:
+    def append_vacancy(self, row: list[Any]) -> None:
         self._values.append(
             spreadsheetId=self.sheet_id,
             range=f"{self.sheet_name}!A:H",
@@ -71,9 +71,9 @@ class SheetsClient:
         logger.info("Vacancy url not found in sheet for cover letter update: %s", vacancy_url)
         return False
 
-    def list_seen_urls(self) -> set:
+    def list_seen_urls(self) -> set[str]:
         rows = self._values.get(spreadsheetId=self.sheet_id, range=f"{self.sheet_name}!D:D").execute().get("values", [])
         return {r[0] for r in rows[1:] if r and r[0]}
 
-    def list_seen_ids(self) -> set:
+    def list_seen_ids(self) -> set[str]:
         return self.list_seen_urls()
