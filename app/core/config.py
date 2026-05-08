@@ -26,6 +26,7 @@ class Settings(BaseSettings):
 
     # Google Sheets
     google_sheet_id: str = ""
+    google_sheet_name: str = "CRM"
     google_credentials_path: str = "credentials.json"
 
     # App
