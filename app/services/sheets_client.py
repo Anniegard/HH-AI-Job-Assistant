@@ -57,6 +57,10 @@ class SheetsClient:
         logger.info("Vacancy url not found in sheet for status update: %s", vacancy_url)
         return False
 
-    def list_seen_ids(self) -> set[str]:
+    def list_seen_urls(self) -> set[str]:
         rows = self._values.get(spreadsheetId=self.sheet_id, range=f"{self.sheet_name}!D:D").execute().get("values", [])
         return {r[0] for r in rows[1:] if r and r[0]}
+
+    def list_seen_ids(self) -> set[str]:
+        """Backward-compatible alias for old method name."""
+        return self.list_seen_urls()

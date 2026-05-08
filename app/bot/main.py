@@ -26,7 +26,16 @@ DEFAULT_PER_PAGE = 20
 
 
 def _new_state() -> dict:
-    return {"queue": [], "cursor": 0, "current": None, "seen": set(), "saved": set(), "hidden": set(), "scores": {}}
+    return {
+        "queue": [],
+        "cursor": 0,
+        "current": None,
+        "seen": set(),
+        "saved": set(),
+        "hidden": set(),
+        "scores": {},
+        "sheet_seen_urls_loaded": False,
+    }
 
 
 _state: dict[int, dict] = defaultdict(_new_state)
@@ -51,15 +60,23 @@ async def _load_queue(chat_id: int) -> None:
 
 async def _show_next(update: Update, chat_id: int, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     st = _state[chat_id]
+    if not st["sheet_seen_urls_loaded"]:
+        try:
+            st["seen"].update(_sheets.list_seen_urls())
+        except SheetsClientError as e:
+            logger.warning("Failed to preload seen vacancies from sheet: %s", e)
+        st["sheet_seen_urls_loaded"] = True
+
     if not st["queue"] or st["cursor"] >= len(st["queue"]):
         await _load_queue(chat_id)
 
     while st["cursor"] < len(st["queue"]):
         vacancy = st["queue"][st["cursor"]]
         st["cursor"] += 1
-        if vacancy.id in st["seen"] or vacancy.id in st["hidden"]:
+        if vacancy.id in st["seen"] or vacancy.url in st["seen"] or vacancy.id in st["hidden"] or vacancy.url in st["hidden"]:
             continue
         st["seen"].add(vacancy.id)
+        st["seen"].add(vacancy.url)
         st["current"] = vacancy
         score, reasons = _scorer.score(vacancy.model_dump())
         st["scores"][vacancy.id] = (score, reasons)
@@ -109,6 +126,7 @@ async def cmd_save(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("Сначала покажи вакансию: /jobs")
         return
     st["saved"].add(cur.id)
+    st["saved"].add(cur.url)
     _sheets.update_status(cur.url, "saved")
     await update.message.reply_text("📌 Сохранено")
 
@@ -118,6 +136,7 @@ async def cmd_hide(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     cur: Vacancy | None = st.get("current")
     if cur:
         st["hidden"].add(cur.id)
+        st["hidden"].add(cur.url)
         _sheets.update_status(cur.url, "hidden")
     await _show_next(update, update.effective_chat.id, ctx)
 
@@ -142,6 +161,7 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             st["saved"].add(vacancy_id)
             cur: Vacancy | None = st.get("current")
             if cur and cur.id == vacancy_id:
+                st["saved"].add(cur.url)
                 _sheets.update_status(cur.url, "saved")
             await query.message.reply_text("📌 Сохранено")
     elif action == "hide":
@@ -150,6 +170,7 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             st["hidden"].add(vacancy_id)
             cur: Vacancy | None = st.get("current")
             if cur and cur.id == vacancy_id:
+                st["hidden"].add(cur.url)
                 _sheets.update_status(cur.url, "hidden")
         await _show_next(update, update.effective_chat.id, ctx)
     elif action == "coverletter":

@@ -18,7 +18,11 @@ async def test_status_flow_viewed_saved_hidden(monkeypatch) -> None:
 
     append = MagicMock()
     update = MagicMock(return_value=True)
-    monkeypatch.setattr(bot_main, "_sheets", SimpleNamespace(append_vacancy=append, update_status=update))
+    monkeypatch.setattr(
+        bot_main,
+        "_sheets",
+        SimpleNamespace(append_vacancy=append, update_status=update, list_seen_urls=MagicMock(return_value=set())),
+    )
 
     msg = SimpleNamespace(reply_text=AsyncMock(), chat=SimpleNamespace(send_action=AsyncMock()))
     update_obj = SimpleNamespace(effective_chat=SimpleNamespace(id=chat_id), message=msg, callback_query=None)

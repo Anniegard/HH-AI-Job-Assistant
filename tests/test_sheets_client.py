@@ -48,3 +48,16 @@ def test_list_seen_ids_reads_url_column() -> None:
     seen = client.list_seen_ids()
 
     assert seen == {"https://a", "https://b"}
+
+
+def test_list_seen_urls_reads_url_column() -> None:
+    service, _ = _mock_service([
+        ["url"],
+        ["https://a"],
+        ["https://b"],
+    ])
+    client = SheetsClient(service=service, sheet_id="sid", sheet_name="CRM")
+
+    seen = client.list_seen_urls()
+
+    assert seen == {"https://a", "https://b"}
