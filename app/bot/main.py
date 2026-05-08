@@ -16,6 +16,7 @@ from telegram.ext import (
 from app.core.config import settings
 from app.core.logging import logger
 from app.scoring.engine import ScoringEngine
+from app.services.crm_store import CRMAction, GoogleSheetsCRMStore
 from app.services.hh_client import HHClient, HHClientError
 from app.services.vacancy import Vacancy
 
@@ -24,11 +25,20 @@ DEFAULT_PER_PAGE = 20
 
 
 def _new_state() -> dict:
-    return {"queue": [], "cursor": 0, "current": None, "seen": set(), "saved": set(), "hidden": set()}
+    return {
+        "queue": [],
+        "cursor": 0,
+        "current": None,
+        "seen": set(),
+        "saved": set(),
+        "hidden": set(),
+        "seen_external": set(),
+    }
 
 
 _state: dict[int, dict] = defaultdict(_new_state)
 _scorer = ScoringEngine()
+_crm = GoogleSheetsCRMStore()
 
 
 def _buttons(vacancy_id: str) -> InlineKeyboardMarkup:
@@ -41,9 +51,16 @@ def _buttons(vacancy_id: str) -> InlineKeyboardMarkup:
 async def _load_queue(chat_id: int) -> None:
     client = HHClient()
     raw = await client.search_vacancies(text=DEFAULT_QUERY, per_page=DEFAULT_PER_PAGE, page=0)
-    queue = [Vacancy.from_hh(item) for item in raw.get("items", [])]
-    _state[chat_id]["queue"] = queue
-    _state[chat_id]["cursor"] = 0
+    seen_ids = await _crm.get_seen_ids(chat_id)
+    st = _state[chat_id]
+    st["seen_external"] = seen_ids
+    queue = [
+        vacancy
+        for vacancy in (Vacancy.from_hh(item) for item in raw.get("items", []))
+        if vacancy.id not in seen_ids
+    ]
+    st["queue"] = queue
+    st["cursor"] = 0
 
 
 async def _show_next(update: Update, chat_id: int, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -54,9 +71,8 @@ async def _show_next(update: Update, chat_id: int, ctx: ContextTypes.DEFAULT_TYP
     while st["cursor"] < len(st["queue"]):
         vacancy = st["queue"][st["cursor"]]
         st["cursor"] += 1
-        if vacancy.id in st["seen"] or vacancy.id in st["hidden"]:
+        if vacancy.id in st["seen"] or vacancy.id in st["hidden"] or vacancy.id in st["seen_external"]:
             continue
-        st["seen"].add(vacancy.id)
         st["current"] = vacancy
         score, reasons = _scorer.score(vacancy.model_dump())
         score_line = f"\n\n🎯 Score: <b>{score}/100</b>"
@@ -100,7 +116,10 @@ async def cmd_save(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     if not cur:
         await update.message.reply_text("Сначала покажи вакансию: /jobs")
         return
+    await _crm.save_action(CRMAction(chat_id=update.effective_chat.id, vacancy_id=cur.id, action="saved"))
     st["saved"].add(cur.id)
+    st["seen"].add(cur.id)
+    st["seen_external"].add(cur.id)
     await update.message.reply_text("📌 Сохранено")
 
 
@@ -108,7 +127,10 @@ async def cmd_hide(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     st = _state[update.effective_chat.id]
     cur: Vacancy | None = st.get("current")
     if cur:
+        await _crm.save_action(CRMAction(chat_id=update.effective_chat.id, vacancy_id=cur.id, action="hidden"))
         st["hidden"].add(cur.id)
+        st["seen"].add(cur.id)
+        st["seen_external"].add(cur.id)
     await _show_next(update, update.effective_chat.id, ctx)
 
 
@@ -119,16 +141,27 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     action, _, vacancy_id = (query.data or "").partition(":")
 
     if action == "next":
+        cur = _state[update.effective_chat.id].get("current")
+        if cur:
+            await _crm.save_action(CRMAction(chat_id=update.effective_chat.id, vacancy_id=cur.id, action="viewed"))
+            _state[update.effective_chat.id]["seen"].add(cur.id)
+            _state[update.effective_chat.id]["seen_external"].add(cur.id)
         await _show_next(update, update.effective_chat.id, ctx)
     elif action == "save":
         st = _state[update.effective_chat.id]
         if vacancy_id:
+            await _crm.save_action(CRMAction(chat_id=update.effective_chat.id, vacancy_id=vacancy_id, action="saved"))
             st["saved"].add(vacancy_id)
+            st["seen"].add(vacancy_id)
+            st["seen_external"].add(vacancy_id)
             await query.message.reply_text("📌 Сохранено")
     elif action == "hide":
         st = _state[update.effective_chat.id]
         if vacancy_id:
+            await _crm.save_action(CRMAction(chat_id=update.effective_chat.id, vacancy_id=vacancy_id, action="hidden"))
             st["hidden"].add(vacancy_id)
+            st["seen"].add(vacancy_id)
+            st["seen_external"].add(vacancy_id)
         await _show_next(update, update.effective_chat.id, ctx)
 
 
