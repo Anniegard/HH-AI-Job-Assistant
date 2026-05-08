@@ -6,6 +6,22 @@ All notable changes to this project will be documented in this file.
 
 ## [unreleased] — 2026-05-09
 
+### Stage 3.5 — Resume Context
+
+- `profile/resume.md` — новый файл с профилем кандидата: целевые роли, стек, AI-инструменты, проекты (bot-mont-shk, anniland.ru, AI-assistant_for_table_sellers, Habr Tech Radar Bot, HH AI Job Assistant) и правила стиля писем
+- `app/core/resume.py` — новый модуль `load_resume_context(max_chars=6000)`: читает `resume.md` UTF-8, fallback на `settings.user_profile` при ошибке/пустом файле, логирует warning, не падает, обрезает до max_chars
+- `app/core/config.py` — добавлена настройка `resume_md_path: str = "profile/resume.md"` (переопределяется через `RESUME_MD_PATH` в `.env`)
+- `app/services/openai_client.py` — промпт вынесен в отдельную функцию `build_coverletter_prompt()` для тестируемости; промпт усилен: запрет выдумывать опыт/компании/навыки, запрет приветствий/подписей/плейсхолдеров, требование выбирать 1–2 релевантных проекта
+- `app/bot/main.py` — `_generate_coverletter()` теперь использует `load_resume_context()` вместо `settings.user_profile`; fallback через `user_profile` сохранён
+- `.env.example` — добавлена переменная `RESUME_MD_PATH`
+- `README.md` — добавлен раздел «Resume context» с описанием файла, инструкцией по редактированию и переменной `RESUME_MD_PATH`
+- `tests/test_resume_context.py` — 6 тестов: чтение файла, fallback при отсутствии файла, fallback при пустом файле, truncate max_chars, truncate fallback, нет исключений при OSError
+- `tests/test_openai_client.py` — 6 новых тестов `build_coverletter_prompt`: наличие resume context, вакансии и компании, запрет выдумывать опыт, запрет подписей и плейсхолдеров, требование русского языка, ограничение 4–6 предложений
+
+---
+
+## [unreleased] — 2026-05-09
+
 ### HH_ACCESS_TOKEN — стабильная авторизация для поиска вакансий
 
 - `app/services/hh_client.py` — обновлён docstring (токен обязателен); конструктор корректно обрабатывает пустую строку (`"" → нет токена`); при 403 логируется понятная ошибка с подсказкой про `HH_ACCESS_TOKEN` (сам токен в лог не попадает)

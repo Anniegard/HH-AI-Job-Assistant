@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock, patch
 
-from app.services.openai_client import OpenAIClient, OpenAIClientError
+import pytest
+
+from app.services.openai_client import OpenAIClient, OpenAIClientError, build_coverletter_prompt
 
 
 def _mock_completion(text):
@@ -87,3 +88,81 @@ def test_generate_cover_letter_includes_vacancy_in_prompt():
     assert "DeepMind" in prompt_text
     assert "PyTorch, transformers" in prompt_text
     assert "ML engineer with 5 years exp" in prompt_text
+
+
+# ---------------------------------------------------------------------------
+# Tests for build_coverletter_prompt()
+# ---------------------------------------------------------------------------
+
+
+def test_prompt_contains_resume_context():
+    """Prompt must include the resume/profile text."""
+    prompt = build_coverletter_prompt(
+        vacancy_title="Python Dev",
+        company="ACME",
+        requirements="FastAPI",
+        resume_context="bot-mont-shk, Wildberries automation",
+    )
+    assert "bot-mont-shk" in prompt
+    assert "Wildberries automation" in prompt
+
+
+def test_prompt_contains_vacancy_and_company():
+    """Prompt must mention both vacancy title and company."""
+    prompt = build_coverletter_prompt(
+        vacancy_title="Data Analyst",
+        company="TechCorp",
+        requirements="SQL, Python",
+        resume_context="profile text",
+    )
+    assert "Data Analyst" in prompt
+    assert "TechCorp" in prompt
+    assert "SQL, Python" in prompt
+
+
+def test_prompt_forbids_inventing_experience():
+    """Prompt must instruct the model not to invent years/skills."""
+    prompt = build_coverletter_prompt(
+        vacancy_title="Dev",
+        company="Co",
+        requirements="",
+        resume_context="profile",
+    )
+    lower = prompt.lower()
+    assert "не выдумывай" in lower or "только факты" in lower
+
+
+def test_prompt_forbids_signature_and_placeholders():
+    """Prompt must forbid signatures and placeholders."""
+    prompt = build_coverletter_prompt(
+        vacancy_title="Dev",
+        company="Co",
+        requirements="",
+        resume_context="profile",
+    )
+    lower = prompt.lower()
+    assert "подпись" in lower or "с уважением" in lower
+    assert "ваше имя" in lower or "placeholder" in lower or "плейсхолдер" in lower
+
+
+def test_prompt_requires_russian():
+    """Prompt must explicitly require Russian language."""
+    prompt = build_coverletter_prompt(
+        vacancy_title="Dev",
+        company="Co",
+        requirements="",
+        resume_context="profile",
+    )
+    lower = prompt.lower()
+    assert "русск" in lower
+
+
+def test_prompt_specifies_sentence_count():
+    """Prompt must specify the 4-6 sentence length limit."""
+    prompt = build_coverletter_prompt(
+        vacancy_title="Dev",
+        company="Co",
+        requirements="",
+        resume_context="profile",
+    )
+    assert "4" in prompt and "6" in prompt

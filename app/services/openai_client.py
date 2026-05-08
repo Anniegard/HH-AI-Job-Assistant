@@ -9,6 +9,37 @@ class OpenAIClientError(RuntimeError):
     pass
 
 
+def build_coverletter_prompt(
+    *,
+    vacancy_title: str,
+    company: str,
+    requirements: str,
+    resume_context: str,
+) -> str:
+    """Build the cover letter generation prompt.
+
+    Extracted into a standalone function so it can be unit-tested
+    independently of the OpenAI API call.
+    """
+    req_text = requirements or "не указаны"
+    return (
+        "Ты помогаешь кандидату написать отклик на вакансию для HH.ru.\n\n"
+        "СТРОГИЕ ПРАВИЛА:\n"
+        "1. Пиши ТОЛЬКО на русском языке.\n"
+        "2. Используй ТОЛЬКО факты из профиля ниже — не выдумывай годы опыта, навыки, компании.\n"
+        "3. Не добавляй приветствие (Уважаемые, Добрый день и т.п.).\n"
+        "4. Не добавляй подпись (С уважением, Спасибо за внимание и т.п.).\n"
+        "5. Не используй плейсхолдеры [Ваше имя], [название компании], [должность].\n"
+        "6. Выбери 1-2 проекта из профиля, наиболее релевантных этой вакансии, и упомяни их конкретно.\n"
+        "7. Пиши конкретно и по делу — без общих AI-клише.\n"
+        "8. Длина ответа: ровно 4-6 предложений. Не больше.\n\n"
+        f"Вакансия: {vacancy_title}\n"
+        f"Компания: {company}\n"
+        f"Требования: {req_text}\n\n"
+        f"Профиль кандидата:\n{resume_context}"
+    )
+
+
 class OpenAIClient:
     def __init__(self, api_key: str | None = None, model: str = "gpt-4o-mini") -> None:
         self._api_key = api_key if api_key is not None else settings.openai_api_key
@@ -27,16 +58,11 @@ class OpenAIClient:
 
         client = OpenAI(api_key=self._api_key)
 
-        prompt = (
-            "Write a short cover letter in Russian for a job application on HH.ru. "
-            "IMPORTANT: the entire letter must be written in Russian. "
-            "Style: confident, specific, polite -- no AI cliches, no filler phrases. "
-            "Length: 4-6 sentences. Highlight relevant experience from the candidate "
-            "profile that matches the vacancy requirements.\n\n"
-            f"Vacancy: {vacancy_title}\n"
-            f"Company: {company}\n"
-            f"Requirements: {requirements or 'not specified'}\n"
-            f"Candidate profile: {user_profile or 'Python developer, AI automation, FastAPI, Telegram bots'}"
+        prompt = build_coverletter_prompt(
+            vacancy_title=vacancy_title,
+            company=company,
+            requirements=requirements,
+            resume_context=user_profile or settings.user_profile,
         )
 
         try:

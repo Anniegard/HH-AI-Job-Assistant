@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     # Overridable via USER_PROFILE in .env
     user_profile: str = (
-        "Python/FastAPI automation developer with 3+ years of experience "
+        "Python/FastAPI automation developer with experience "
         "building production bots and data pipelines. "
         "Key projects: bot-mont-shk (Wildberries warehouse loss analytics "
         "automation -- tracks shortages, auto-generates claims, integrates "
@@ -36,6 +36,10 @@ class Settings(BaseSettings):
         "Looking for Python backend or automation roles involving bots, "
         "AI integration, or data pipelines."
     )
+
+    # Resume context for cover letter generation
+    # Overridable via RESUME_MD_PATH in .env
+    resume_md_path: str = "profile/resume.md"
 
     # Google Sheets
     google_sheet_id: str = ""

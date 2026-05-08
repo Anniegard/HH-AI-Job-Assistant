@@ -163,6 +163,26 @@ python scripts/check_hh_api.py
 
 ---
 
+## 📄 Resume context
+
+Сопроводительные письма генерируются на основе файла `profile/resume.md`.  
+Он содержит целевые роли, стек, проекты и правила стиля — всё, что модель должна
+использовать как единственный источник фактов.
+
+**Как редактировать:** откройте `profile/resume.md` и обновите нужные разделы
+(проекты, стек, целевые роли). Изменения применятся при следующем запросе `/coverletter`.
+
+**Переопределить путь через `.env`:**
+
+```
+RESUME_MD_PATH=path/to/your_resume.md
+```
+
+Если файл не найден или пустой, бот автоматически использует `USER_PROFILE` из `.env`
+как резервный контекст (fallback).
+
+---
+
 ## 🔑 Переменные окружения
 
 | Переменная | Описание |
@@ -172,6 +192,7 @@ python scripts/check_hh_api.py
 | `HH_CLIENT_SECRET` | Client Secret HH |
 | `HH_ACCESS_TOKEN` | **Обязателен** — токен приложения для поиска вакансий |
 | `OPENAI_API_KEY` | OpenAI API ключ |
+| `RESUME_MD_PATH` | Путь к `profile/resume.md` (по умолчанию `profile/resume.md`) |
 | `GOOGLE_SHEET_ID` | ID Google Sheets таблицы |
 | `GOOGLE_CREDENTIALS_PATH` | Путь к credentials.json |
 

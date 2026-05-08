@@ -15,6 +15,7 @@ from telegram.ext import (
 
 from app.core.config import settings
 from app.core.logging import logger
+from app.core.resume import load_resume_context
 from app.scoring.engine import ScoringEngine
 from app.services.crm_mapper import vacancy_to_crm_row
 from app.services.hh_client import HHClient, HHClientError
@@ -168,7 +169,7 @@ def _generate_coverletter(chat_id: int) -> tuple:
         vacancy_title=cur.name,
         company=cur.employer,
         requirements=cur.snippet_requirement or "",
-        user_profile=settings.user_profile,
+        user_profile=load_resume_context(),
     )
     return letter, cur.url or ""
 
@@ -248,14 +249,3 @@ async def main() -> None:
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
-    logger.info("Bot started. Press Ctrl+C to stop.")
-    try:
-        await asyncio.Event().wait()
-    finally:
-        await app.updater.stop()
-        await app.stop()
-        await app.shutdown()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
