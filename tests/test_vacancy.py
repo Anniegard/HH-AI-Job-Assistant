@@ -53,3 +53,10 @@ def test_salary_format_only_from() -> None:
     v = Vacancy.from_hh(item)
     assert v.salary is not None
     assert v.salary.format().startswith("от 150")
+
+
+def test_salary_format_supports_zero_bounds() -> None:
+    item = {**SAMPLE_HH_ITEM, "salary": {"from": 0, "to": 0, "currency": "RUR"}}
+    v = Vacancy.from_hh(item)
+    assert v.salary is not None
+    assert v.salary.format() == "0–0 RUR"

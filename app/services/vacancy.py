@@ -21,9 +21,9 @@ class Salary(BaseModel):
         if self.from_ is None and self.to is None:
             return "не указана"
         cur = self.currency or ""
-        if self.from_ and self.to:
+        if self.from_ is not None and self.to is not None:
             return f"{self.from_:,}–{self.to:,} {cur}".replace(",", " ")
-        if self.from_:
+        if self.from_ is not None:
             return f"от {self.from_:,} {cur}".replace(",", " ")
         return f"до {self.to:,} {cur}".replace(",", " ")
 
