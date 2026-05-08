@@ -16,7 +16,9 @@ from telegram.ext import (
 from app.core.config import settings
 from app.core.logging import logger
 from app.scoring.engine import ScoringEngine
+from app.services.crm_mapper import vacancy_to_crm_row
 from app.services.hh_client import HHClient, HHClientError
+from app.services.sheets_client import SheetsClient, SheetsClientError
 from app.services.vacancy import Vacancy
 
 DEFAULT_QUERY = "Python AI automation"
@@ -24,11 +26,12 @@ DEFAULT_PER_PAGE = 20
 
 
 def _new_state() -> dict:
-    return {"queue": [], "cursor": 0, "current": None, "seen": set(), "saved": set(), "hidden": set()}
+    return {"queue": [], "cursor": 0, "current": None, "seen": set(), "saved": set(), "hidden": set(), "scores": {}}
 
 
 _state: dict[int, dict] = defaultdict(_new_state)
 _scorer = ScoringEngine()
+_sheets = SheetsClient()
 
 
 def _buttons(vacancy_id: str) -> InlineKeyboardMarkup:
@@ -59,6 +62,11 @@ async def _show_next(update: Update, chat_id: int, ctx: ContextTypes.DEFAULT_TYP
         st["seen"].add(vacancy.id)
         st["current"] = vacancy
         score, reasons = _scorer.score(vacancy.model_dump())
+        st["scores"][vacancy.id] = (score, reasons)
+        try:
+            _sheets.append_vacancy(vacancy_to_crm_row(vacancy, score, reasons, status="viewed"))
+        except SheetsClientError as e:
+            logger.warning("Failed to append viewed vacancy to sheet: %s", e)
         score_line = f"\n\n🎯 Score: <b>{score}/100</b>"
         if reasons:
             score_line += f"\nПочему: {', '.join(reasons[:3])}"
@@ -101,6 +109,7 @@ async def cmd_save(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("Сначала покажи вакансию: /jobs")
         return
     st["saved"].add(cur.id)
+    _sheets.update_status(cur.url, "saved")
     await update.message.reply_text("📌 Сохранено")
 
 
@@ -109,6 +118,7 @@ async def cmd_hide(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     cur: Vacancy | None = st.get("current")
     if cur:
         st["hidden"].add(cur.id)
+        _sheets.update_status(cur.url, "hidden")
     await _show_next(update, update.effective_chat.id, ctx)
 
 
@@ -124,11 +134,17 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         st = _state[update.effective_chat.id]
         if vacancy_id:
             st["saved"].add(vacancy_id)
+            cur: Vacancy | None = st.get("current")
+            if cur and cur.id == vacancy_id:
+                _sheets.update_status(cur.url, "saved")
             await query.message.reply_text("📌 Сохранено")
     elif action == "hide":
         st = _state[update.effective_chat.id]
         if vacancy_id:
             st["hidden"].add(vacancy_id)
+            cur: Vacancy | None = st.get("current")
+            if cur and cur.id == vacancy_id:
+                _sheets.update_status(cur.url, "hidden")
         await _show_next(update, update.effective_chat.id, ctx)
 
 
