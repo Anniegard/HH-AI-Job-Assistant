@@ -1,7 +1,12 @@
 """HeadHunter API client.
 
-Stage 1: публичный поиск вакансий без авторизации.
-Документация: https://api.hh.ru/openapi/redoc
+HH_ACCESS_TOKEN (app token) is required for authorized requests.
+Without a token, /vacancies returns 403 Forbidden.
+
+Get a token:  python scripts/get_hh_app_token.py
+Check API:    python scripts/check_hh_api.py
+
+Docs: https://api.hh.ru/openapi/redoc
 """
 
 from __future__ import annotations
@@ -15,14 +20,19 @@ from app.core.logging import logger
 
 
 class HHClientError(Exception):
-    """Базовая ошибка HH клиента."""
+    """Base error for HH client."""
 
 
 class HHClient:
-    """Асинхронный клиент для HeadHunter API.
+    """Async client for HeadHunter API.
 
-    Используется без авторизации (публичный поиск). Для поиска
-    OAuth не требуется — нужен только корректный User-Agent.
+    Searching vacancies (/vacancies) requires HH_ACCESS_TOKEN —
+    an application token obtained via client_credentials grant type.
+    Without a token HH API returns 403 Forbidden.
+
+    Authorization: Bearer <token> is added automatically when
+    access_token is set. If the token is absent — the header is not
+    sent (request will likely return 403).
     """
 
     def __init__(
@@ -34,11 +44,12 @@ class HHClient:
     ) -> None:
         self.base_url = (base_url or settings.hh_base_url).rstrip("/")
         self.user_agent = user_agent or settings.hh_user_agent
-        self.access_token = access_token or settings.hh_access_token
+        # Treat empty string as "no token"; only fall back to settings when None
+        self.access_token = access_token if access_token is not None else settings.hh_access_token
         self.timeout = timeout
 
     def _headers(self) -> dict[str, str]:
-        headers = {
+        headers: dict[str, str] = {
             "User-Agent": self.user_agent,
             "Accept": "application/json",
         }
@@ -54,8 +65,19 @@ class HHClient:
                 response.raise_for_status()
                 return response.json()
             except httpx.HTTPStatusError as e:
-                logger.error(f"HH API error {e.response.status_code}: {e.response.text[:200]}")
-                raise HHClientError(f"HH API returned {e.response.status_code}") from e
+                status = e.response.status_code
+                if status == 403:
+                    logger.error(
+                        "HH API returned 403 Forbidden — HH_ACCESS_TOKEN is missing or invalid. "
+                        "Get a token: python scripts/get_hh_app_token.py"
+                    )
+                    raise HHClientError(
+                        "HH API returned 403 Forbidden. "
+                        "Check HH_ACCESS_TOKEN in .env. "
+                        "Get a token: python scripts/get_hh_app_token.py"
+                    ) from e
+                logger.error(f"HH API error {status}: {e.response.text[:200]}")
+                raise HHClientError(f"HH API returned {status}") from e
             except httpx.RequestError as e:
                 logger.error(f"HH API request failed: {e}")
                 raise HHClientError(f"HH API request failed: {e}") from e
@@ -73,19 +95,19 @@ class HHClient:
         page: int = 0,
         **extra: Any,
     ) -> dict[str, Any]:
-        """Поиск вакансий.
+        """Search vacancies via HH API. Requires HH_ACCESS_TOKEN.
 
-        Параметры HH API:
-            text:       поисковый запрос (например, "Python AI automation")
-            area:       ID региона (1 = Москва, 2 = СПб, 113 = Россия)
-            salary:     минимальная зарплата
+        HH API params:
+            text:       search query (e.g. "Python AI automation")
+            area:       region ID (1=Moscow, 2=SPb, 113=Russia)
+            salary:     minimum salary
             experience: noExperience | between1And3 | between3And6 | moreThan6
             schedule:   fullDay | shift | flexible | remote | flyInFlyOut
             employment: full | part | project | volunteer | probation
-            per_page:   до 100
-            page:       страница (с 0)
+            per_page:   up to 100
+            page:       page number (from 0)
 
-        Возвращает сырой JSON из HH API: {items, found, pages, page, per_page}.
+        Returns raw HH API JSON: {items, found, pages, page, per_page}.
         """
         params: dict[str, Any] = {"per_page": per_page, "page": page}
         if text:
@@ -110,5 +132,5 @@ class HHClient:
         return data
 
     async def get_vacancy(self, vacancy_id: str) -> dict[str, Any]:
-        """Получить полные данные вакансии по ID (с описанием)."""
+        """Get full vacancy data by ID (including description). Requires HH_ACCESS_TOKEN."""
         return await self._get(f"/vacancies/{vacancy_id}")

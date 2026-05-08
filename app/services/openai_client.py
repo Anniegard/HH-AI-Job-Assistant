@@ -11,7 +11,7 @@ class OpenAIClientError(RuntimeError):
 
 class OpenAIClient:
     def __init__(self, api_key: str | None = None, model: str = "gpt-4o-mini") -> None:
-        self._api_key = api_key or settings.openai_api_key
+        self._api_key = api_key if api_key is not None else settings.openai_api_key
         self._model = model
 
     def generate_cover_letter(

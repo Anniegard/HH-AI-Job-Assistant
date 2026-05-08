@@ -122,11 +122,44 @@ pip install -r requirements.txt
 
 # 3. Конфиг
 cp .env.example .env
-# Заполни .env своими ключами
+# Заполни .env своими ключами (см. блок ниже про HH_ACCESS_TOKEN)
 
 # 4. Запуск
 uvicorn app.main:app --reload
 ```
+
+---
+
+## 🔑 HH API access token
+
+Для поиска вакансий (`/vacancies`) HH API **требует авторизацию** — без токена вернётся `403 Forbidden`.
+Используется токен приложения, полученный через `client_credentials` (OAuth redirect при этом **не нужен**).
+
+**Шаг 1.** Убедитесь, что в `.env` заполнены `HH_CLIENT_ID` и `HH_CLIENT_SECRET` (берутся из [dev.hh.ru/admin](https://dev.hh.ru/admin)).
+
+**Шаг 2.** Получите токен приложения:
+
+```bash
+python scripts/get_hh_app_token.py
+```
+
+Скрипт выведет `access_token` — скопируйте его и вставьте в `.env`:
+
+```
+HH_ACCESS_TOKEN=IGPA3A...ваш_токен...
+```
+
+**Шаг 3.** Проверьте, что API работает:
+
+```bash
+python scripts/check_hh_api.py
+```
+
+Скрипт проверит `GET /me` и `GET /vacancies` и покажет HTTP-статусы. При `200` всё готово.
+
+> **Примечание:** `HH_ACCESS_TOKEN` здесь — токен *приложения* (client credentials), а не пользователя.
+> OAuth redirect через anniland.ru потребуется позже — для откликов от имени аккаунта пользователя.
+> Для поиска вакансий он не нужен.
 
 ---
 
@@ -137,6 +170,7 @@ uvicorn app.main:app --reload
 | `TELEGRAM_TOKEN` | Bot token от @BotFather |
 | `HH_CLIENT_ID` | Client ID приложения HH |
 | `HH_CLIENT_SECRET` | Client Secret HH |
+| `HH_ACCESS_TOKEN` | **Обязателен** — токен приложения для поиска вакансий |
 | `OPENAI_API_KEY` | OpenAI API ключ |
 | `GOOGLE_SHEET_ID` | ID Google Sheets таблицы |
 | `GOOGLE_CREDENTIALS_PATH` | Путь к credentials.json |

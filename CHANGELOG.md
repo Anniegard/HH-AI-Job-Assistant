@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [unreleased] — 2026-05-09
+
+### HH_ACCESS_TOKEN — стабильная авторизация для поиска вакансий
+
+- `app/services/hh_client.py` — обновлён docstring (токен обязателен); конструктор корректно обрабатывает пустую строку (`"" → нет токена`); при 403 логируется понятная ошибка с подсказкой про `HH_ACCESS_TOKEN` (сам токен в лог не попадает)
+- `.env.example` — `HH_ACCESS_TOKEN` стал явной переменной с комментарием о получении через `client_credentials`
+- `scripts/get_hh_app_token.py` — новый скрипт: получает токен приложения через POST `/token` и печатает строку для вставки в `.env`
+- `scripts/check_hh_api.py` — новый скрипт: диагностика `GET /me` и `GET /vacancies` с выводом HTTP-статусов
+- `README.md` — добавлен блок «HH API access token» с пошаговой инструкцией; явно указано что OAuth redirect для поиска не нужен
+- `tests/test_hh_client.py` — 3 новых теста: Authorization присутствует при наличии токена; отсутствует без токена; 403 содержит подсказку про `HH_ACCESS_TOKEN`
+
+---
+
 ## [unreleased] — 2026-05-08
 
 ### Polish after Stage 3
