@@ -1,26 +1,26 @@
 from app.scoring.engine import ScoringEngine
 
 
-def test_scoring_engine_scores_keywords() -> None:
+def test_scoring_engine_boosts_target_stack() -> None:
     engine = ScoringEngine()
     score, reasons = engine.score(
         {
-            "name": "Python FastAPI Engineer",
-            "snippet_requirement": "AI automation",
-            "schedule": "remote",
+            "name": "Python FastAPI Telegram AI automation engineer",
+            "snippet_requirement": "Google Sheets API, marketplace, remote",
         }
     )
-    assert score == 85
+    assert score >= 80
     assert "Python" in reasons
-    assert "FastAPI" in reasons
+    assert "Google Sheets API" in reasons
 
 
-def test_scoring_engine_caps_at_100() -> None:
+def test_scoring_engine_applies_negative_penalties() -> None:
     engine = ScoringEngine()
-    score, _ = engine.score(
+    score, reasons = engine.score(
         {
-            "name": "Python FastAPI AI automation remote",
-            "snippet_requirement": "удаленная работа",
+            "name": "Sales call-center operator",
+            "snippet_requirement": "только поддержка клиентов",
         }
     )
-    assert score == 95
+    assert score == 0
+    assert any("penalty" in reason for reason in reasons)

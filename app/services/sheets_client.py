@@ -37,14 +37,14 @@ class SheetsClient:
     def append_vacancy(self, row: list[str]) -> None:
         self._values.append(
             spreadsheetId=self.sheet_id,
-            range=f"{self.sheet_name}!A:G",
+            range=f"{self.sheet_name}!A:J",
             valueInputOption="RAW",
             insertDataOption="INSERT_ROWS",
             body={"values": [row]},
         ).execute()
 
     def update_status(self, vacancy_url: str, status: str) -> bool:
-        rows = self._values.get(spreadsheetId=self.sheet_id, range=f"{self.sheet_name}!A:G").execute().get("values", [])
+        rows = self._values.get(spreadsheetId=self.sheet_id, range=f"{self.sheet_name}!A:J").execute().get("values", [])
         for idx, row in enumerate(rows[1:], start=2):
             if len(row) >= 4 and row[3] == vacancy_url:
                 self._values.update(
@@ -64,3 +64,18 @@ class SheetsClient:
     def list_seen_ids(self) -> set[str]:
         """Backward-compatible alias for old method name."""
         return self.list_seen_urls()
+
+
+    def update_cover_letter(self, vacancy_url: str, cover_letter: str) -> bool:
+        rows = self._values.get(spreadsheetId=self.sheet_id, range=f"{self.sheet_name}!A:J").execute().get("values", [])
+        for idx, row in enumerate(rows[1:], start=2):
+            if len(row) >= 4 and row[3] == vacancy_url:
+                self._values.update(
+                    spreadsheetId=self.sheet_id,
+                    range=f"{self.sheet_name}!H{idx}",
+                    valueInputOption="RAW",
+                    body={"values": [[cover_letter]]},
+                ).execute()
+                return True
+        logger.info("Vacancy url not found in sheet for cover letter update: %s", vacancy_url)
+        return False

@@ -15,6 +15,7 @@ from telegram.ext import (
 
 from app.core.config import settings
 from app.core.logging import logger
+from app.core.profile import CANDIDATE_PROFILE
 from app.scoring.engine import ScoringEngine
 from app.services.crm_mapper import vacancy_to_crm_row
 from app.services.hh_client import HHClient, HHClientError
@@ -157,12 +158,11 @@ def _generate_coverletter(chat_id: int) -> str:
     if not cur:
         raise OpenAIClientError("Сначала покажи вакансию: /jobs")
 
-    profile = "Python backend разработчик (FastAPI, Telegram-боты, AI automation)."
     return _openai.generate_cover_letter(
         vacancy_title=cur.name,
         company=cur.employer,
         requirements=cur.snippet_requirement or "",
-        user_profile=profile,
+        user_profile=CANDIDATE_PROFILE,
     )
 
 
@@ -174,6 +174,9 @@ async def cmd_coverletter(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(f"⚠️ {e}")
         return
 
+    cur = _state[chat_id].get("current")
+    if cur and cur.url:
+        _sheets.update_cover_letter(cur.url, cover_letter)
     await update.message.reply_text(f"✉️ Сопроводительное письмо:\n\n{cover_letter}")
 
 
@@ -211,6 +214,9 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         except OpenAIClientError as e:
             await query.message.reply_text(f"⚠️ {e}")
             return
+        cur = _state[update.effective_chat.id].get("current")
+        if cur and cur.url:
+            _sheets.update_cover_letter(cur.url, cover_letter)
         await query.message.reply_text(f"✉️ Сопроводительное письмо:\n\n{cover_letter}")
 
 

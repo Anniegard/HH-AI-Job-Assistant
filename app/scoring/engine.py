@@ -1,4 +1,4 @@
-"""Scoring Engine — Stage 2."""
+"""Scoring Engine — Stage 3."""
 
 from __future__ import annotations
 
@@ -6,13 +6,29 @@ from __future__ import annotations
 class ScoringEngine:
     """Rule-based scoring (0-100) for vacancy relevance."""
 
-    KEYWORDS: dict[str, tuple[int, str]] = {
-        "python": (25, "Python"),
-        "fastapi": (15, "FastAPI"),
-        "ai": (20, "AI"),
-        "automation": (15, "automation"),
+    POSITIVE_KEYWORDS: dict[str, tuple[int, str]] = {
+        "python": (20, "Python"),
+        "fastapi": (10, "FastAPI"),
+        "telegram": (10, "Telegram"),
+        "google sheets": (12, "Google Sheets API"),
+        "api": (8, "API integrations"),
+        "ai": (14, "AI"),
+        "automation": (14, "automation"),
+        "e-commerce": (8, "e-commerce"),
+        "ecommerce": (8, "e-commerce"),
+        "marketplace": (10, "marketplace"),
         "remote": (10, "remote"),
         "удален": (10, "remote"),
+    }
+
+    NEGATIVE_KEYWORDS: dict[str, tuple[int, str]] = {
+        "call-center": (-25, "call-center penalty"),
+        "колл-центр": (-25, "call-center penalty"),
+        "sales": (-20, "sales-heavy penalty"),
+        "продаж": (-20, "sales-heavy penalty"),
+        "support only": (-20, "support-only penalty"),
+        "только поддержка": (-20, "support-only penalty"),
+        "оператор": (-15, "operator penalty"),
     }
 
     def score(self, vacancy: dict) -> tuple[int, list[str]]:
@@ -26,9 +42,14 @@ class ScoringEngine:
 
         score = 0
         reasons: list[str] = []
-        for kw, (points, reason) in self.KEYWORDS.items():
+        for kw, (points, reason) in self.POSITIVE_KEYWORDS.items():
             if kw in text:
                 score += points
                 reasons.append(reason)
 
-        return min(score, 100), reasons
+        for kw, (points, reason) in self.NEGATIVE_KEYWORDS.items():
+            if kw in text:
+                score += points
+                reasons.append(reason)
+
+        return max(0, min(score, 100)), reasons
