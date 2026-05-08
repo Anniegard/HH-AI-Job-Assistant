@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import httpx
 import pytest
+
+httpx = pytest.importorskip("httpx")
 
 from app.services.hh_client import HHClient, HHClientError
 
