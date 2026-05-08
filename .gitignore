@@ -1,0 +1,62 @@
+# ===== SECRETS & ENV =====
+.env
+.env.*
+!.env.example
+credentials.json
+service_account.json
+token.json
+*.pem
+*.key
+
+# ===== PYTHON =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ===== VIRTUAL ENVS =====
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ===== TESTING =====
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+coverage.xml
+*.cover
+
+# ===== MYPY / RUFF =====
+.mypy_cache/
+.ruff_cache/
+
+# ===== LOGS =====
+*.log
+logs/
+
+# ===== DOCKER =====
+*.env.docker
+
+# ===== PROJECT SPECIFIC =====
+# Не коммитить данные о вакансиях
+data/
+exports/
