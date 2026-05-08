@@ -1,112 +1,159 @@
-"""Telegram-бот, Stage 1.
-
-Запуск: python -m app.bot.main
-Использует polling. Хранит viewed_ids в памяти процесса.
-"""
-
 from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
     ApplicationBuilder,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
 )
 
 from app.core.config import settings
 from app.core.logging import logger
+from app.scoring.engine import ScoringEngine
 from app.services.hh_client import HHClient, HHClientError
 from app.services.vacancy import Vacancy
 
-# In-memory: chat_id -> set(vacancy_id). Stage 2 переедет в Google Sheets.
-_viewed: dict[int, set[str]] = defaultdict(set)
-
-# Стартовый запрос — позже вынесем в /settings или конфиг профиля.
 DEFAULT_QUERY = "Python AI automation"
 DEFAULT_PER_PAGE = 20
 
 
-async def cmd_start(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
-    text = (
-        "👋 Привет! Я HH AI Job Assistant.\n\n"
-        "Команды:\n"
-        "/jobs — показать свежую вакансию\n"
-        "/next — следующая (Stage 2)\n"
-        "/save — сохранить (Stage 2)\n"
-        "/coverletter — сгенерировать сопроводительное (Stage 3)\n"
+def _new_state() -> dict:
+    return {"queue": [], "cursor": 0, "current": None, "seen": set(), "saved": set(), "hidden": set()}
+
+
+_state: dict[int, dict] = defaultdict(_new_state)
+_scorer = ScoringEngine()
+
+
+def _buttons(vacancy_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("👍 Next", callback_data="next"), InlineKeyboardButton("👎 Hide", callback_data=f"hide:{vacancy_id}")],
+         [InlineKeyboardButton("📌 Save", callback_data=f"save:{vacancy_id}")]]
     )
-    await update.message.reply_text(text)
 
 
-async def cmd_jobs(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+async def _load_queue(chat_id: int) -> None:
+    client = HHClient()
+    raw = await client.search_vacancies(text=DEFAULT_QUERY, per_page=DEFAULT_PER_PAGE, page=0)
+    queue = [Vacancy.from_hh(item) for item in raw.get("items", [])]
+    _state[chat_id]["queue"] = queue
+    _state[chat_id]["cursor"] = 0
+
+
+async def _show_next(update: Update, chat_id: int, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    st = _state[chat_id]
+    if not st["queue"] or st["cursor"] >= len(st["queue"]):
+        await _load_queue(chat_id)
+
+    while st["cursor"] < len(st["queue"]):
+        vacancy = st["queue"][st["cursor"]]
+        st["cursor"] += 1
+        if vacancy.id in st["seen"] or vacancy.id in st["hidden"]:
+            continue
+        st["seen"].add(vacancy.id)
+        st["current"] = vacancy
+        score, reasons = _scorer.score(vacancy.model_dump())
+        score_line = f"\n\n🎯 Score: <b>{score}/100</b>"
+        if reasons:
+            score_line += f"\nПочему: {', '.join(reasons[:3])}"
+
+        target = update.message if update.message else update.callback_query.message
+        await target.reply_text(
+            vacancy.short_text() + score_line,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+            reply_markup=_buttons(vacancy.id),
+        )
+        return
+
+    target = update.message if update.message else update.callback_query.message
+    await target.reply_text("Не осталось новых вакансий в выдаче. Попробуй /jobs позже.")
+
+
+async def cmd_start(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text("👋 Привет! Команды: /jobs /next /save /hide")
+
+
+async def cmd_jobs(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
     await update.message.chat.send_action("typing")
-
-    client = HHClient()
     try:
-        raw = await client.search_vacancies(
-            text=DEFAULT_QUERY,
-            per_page=DEFAULT_PER_PAGE,
-            page=0,
-        )
+        await _show_next(update, chat_id, ctx)
     except HHClientError as e:
         logger.error(f"HH error: {e}")
         await update.message.reply_text(f"⚠️ Ошибка HH API: {e}")
-        return
 
-    items = raw.get("items", [])
-    if not items:
-        await update.message.reply_text("Ничего не нашлось 🤷")
-        return
 
-    seen = _viewed[chat_id]
-    for item in items:
-        vid = str(item["id"])
-        if vid in seen:
-            continue
-        vacancy = Vacancy.from_hh(item)
-        seen.add(vid)
-        await update.message.reply_text(
-            vacancy.short_text(),
-            parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True,
-        )
-        return
+async def cmd_next(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    await _show_next(update, update.effective_chat.id, ctx)
 
-    await update.message.reply_text(
-        "Все вакансии из текущей выдачи уже показывал. "
-        "В Stage 2 будет нормальная пагинация и фильтры 🙂"
-    )
+
+async def cmd_save(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+    st = _state[update.effective_chat.id]
+    cur: Vacancy | None = st.get("current")
+    if not cur:
+        await update.message.reply_text("Сначала покажи вакансию: /jobs")
+        return
+    st["saved"].add(cur.id)
+    await update.message.reply_text("📌 Сохранено")
+
+
+async def cmd_hide(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    st = _state[update.effective_chat.id]
+    cur: Vacancy | None = st.get("current")
+    if cur:
+        st["hidden"].add(cur.id)
+    await _show_next(update, update.effective_chat.id, ctx)
+
+
+async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    action, _, vacancy_id = (query.data or "").partition(":")
+
+    if action == "next":
+        await _show_next(update, update.effective_chat.id, ctx)
+    elif action == "save":
+        st = _state[update.effective_chat.id]
+        if vacancy_id:
+            st["saved"].add(vacancy_id)
+            await query.message.reply_text("📌 Сохранено")
+    elif action == "hide":
+        st = _state[update.effective_chat.id]
+        if vacancy_id:
+            st["hidden"].add(vacancy_id)
+        await _show_next(update, update.effective_chat.id, ctx)
 
 
 def build_app() -> Application:
     if not settings.telegram_token:
-        raise RuntimeError(
-            "TELEGRAM_TOKEN не задан. Заполни .env (см. .env.example)."
-        )
+        raise RuntimeError("TELEGRAM_TOKEN не задан. Заполни .env (см. .env.example).")
 
     app = ApplicationBuilder().token(settings.telegram_token).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("jobs", cmd_jobs))
+    app.add_handler(CommandHandler("next", cmd_next))
+    app.add_handler(CommandHandler("save", cmd_save))
+    app.add_handler(CommandHandler("hide", cmd_hide))
+    app.add_handler(CallbackQueryHandler(on_button))
     return app
 
 
 async def main() -> None:
     logger.info("Starting Telegram bot (polling)")
     app = build_app()
-    # PTB v21 использует run_polling с собственным event loop;
-    # здесь оборачиваем для запуска через python -m
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
     logger.info("Bot started. Press Ctrl+C to stop.")
     try:
-        # Ждём бесконечно, пока процесс не убьют
         await asyncio.Event().wait()
     finally:
         await app.updater.stop()
