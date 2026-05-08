@@ -11,12 +11,12 @@ class SheetsClientError(RuntimeError):
 
 
 class SheetsClient:
-    def __init__(self, service: Any | None = None, sheet_id: str | None = None, sheet_name: str | None = None) -> None:
+    def __init__(self, service=None, sheet_id=None, sheet_name=None):
         self.sheet_id = sheet_id or settings.google_sheet_id
         self.sheet_name = sheet_name or settings.google_sheet_name
         self._service = service
 
-    def _get_service(self) -> Any:
+    def _get_service(self):
         if self._service is not None:
             return self._service
         try:
@@ -31,13 +31,13 @@ class SheetsClient:
         return self._service
 
     @property
-    def _values(self) -> Any:
+    def _values(self):
         return self._get_service().spreadsheets().values()
 
-    def append_vacancy(self, row: list[str]) -> None:
+    def append_vacancy(self, row: list) -> None:
         self._values.append(
             spreadsheetId=self.sheet_id,
-            range=f"{self.sheet_name}!A:G",
+            range=f"{self.sheet_name}!A:H",
             valueInputOption="RAW",
             insertDataOption="INSERT_ROWS",
             body={"values": [row]},
@@ -57,10 +57,23 @@ class SheetsClient:
         logger.info("Vacancy url not found in sheet for status update: %s", vacancy_url)
         return False
 
-    def list_seen_urls(self) -> set[str]:
+    def update_cover_letter(self, vacancy_url: str, cover_letter: str) -> bool:
+        rows = self._values.get(spreadsheetId=self.sheet_id, range=f"{self.sheet_name}!A:H").execute().get("values", [])
+        for idx, row in enumerate(rows[1:], start=2):
+            if len(row) >= 4 and row[3] == vacancy_url:
+                self._values.update(
+                    spreadsheetId=self.sheet_id,
+                    range=f"{self.sheet_name}!H{idx}",
+                    valueInputOption="RAW",
+                    body={"values": [[cover_letter]]},
+                ).execute()
+                return True
+        logger.info("Vacancy url not found in sheet for cover letter update: %s", vacancy_url)
+        return False
+
+    def list_seen_urls(self) -> set:
         rows = self._values.get(spreadsheetId=self.sheet_id, range=f"{self.sheet_name}!D:D").execute().get("values", [])
         return {r[0] for r in rows[1:] if r and r[0]}
 
-    def list_seen_ids(self) -> set[str]:
-        """Backward-compatible alias for old method name."""
+    def list_seen_ids(self) -> set:
         return self.list_seen_urls()

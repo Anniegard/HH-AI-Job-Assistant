@@ -16,13 +16,12 @@ class Settings(BaseSettings):
     hh_client_id: str = ""
     hh_client_secret: str = ""
     hh_access_token: str = ""
-    # HH требует осмысленный User-Agent: https://github.com/hhru/api/blob/master/docs/general.md#user-agent
-    # ВАЖНО: example.com и т.п. в чёрном списке. Замени на реальный email/url.
-    # Формат: <AppName>/<Version> (<contact>)
     hh_user_agent: str = "HH-AI-Job-Assistant/0.1 (anniegard@github.com)"
 
     # OpenAI
     openai_api_key: str = ""
+    # Overridable via USER_PROFILE in .env
+    user_profile: str = "Python backend developer (FastAPI, Telegram bots, AI automation)."
 
     # Google Sheets
     google_sheet_id: str = ""

@@ -47,8 +47,16 @@ _openai = OpenAIClient()
 
 def _buttons(vacancy_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("👍 Next", callback_data="next"), InlineKeyboardButton("👎 Hide", callback_data=f"hide:{vacancy_id}")],
-         [InlineKeyboardButton("📌 Save", callback_data=f"save:{vacancy_id}"), InlineKeyboardButton("✉", callback_data="coverletter")]]
+        [
+            [
+                InlineKeyboardButton("\U0001f44d Next", callback_data="next"),
+                InlineKeyboardButton("\U0001f44e Hide", callback_data=f"hide:{vacancy_id}"),
+            ],
+            [
+                InlineKeyboardButton("\U0001f4cc Save", callback_data=f"save:{vacancy_id}"),
+                InlineKeyboardButton("\u2709", callback_data="coverletter"),
+            ],
+        ]
     )
 
 
@@ -90,9 +98,9 @@ async def _show_next(update: Update, chat_id: int, ctx: ContextTypes.DEFAULT_TYP
             _sheets.append_vacancy(vacancy_to_crm_row(vacancy, score, reasons, status="viewed"))
         except SheetsClientError as e:
             logger.warning("Failed to append viewed vacancy to sheet: %s", e)
-        score_line = f"\n\n🎯 Score: <b>{score}/100</b>"
+        score_line = f"\n\n\U0001f3af Score: <b>{score}/100</b>"
         if reasons:
-            score_line += f"\nПочему: {', '.join(reasons[:3])}"
+            score_line += f"\nWhy: {', '.join(reasons[:3])}"
 
         target = update.message if update.message else update.callback_query.message
         await target.reply_text(
@@ -104,11 +112,11 @@ async def _show_next(update: Update, chat_id: int, ctx: ContextTypes.DEFAULT_TYP
         return
 
     target = update.message if update.message else update.callback_query.message
-    await target.reply_text("Не осталось новых вакансий в выдаче. Попробуй /jobs позже.")
+    await target.reply_text("No new vacancies left. Try /jobs later.")
 
 
 async def cmd_start(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("👋 Привет! Команды: /jobs /next /save /hide")
+    await update.message.reply_text("\U0001f44b Hi! Commands: /jobs /next /save /hide /coverletter")
 
 
 async def cmd_jobs(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -118,7 +126,7 @@ async def cmd_jobs(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await _show_next(update, chat_id, ctx)
     except HHClientError as e:
         logger.error(f"HH error: {e}")
-        await update.message.reply_text(f"⚠️ Ошибка HH API: {e}")
+        await update.message.reply_text(f"\u26a0\ufe0f HH API error: {e}")
 
 
 async def cmd_next(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -127,20 +135,20 @@ async def cmd_next(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cmd_save(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     st = _state[update.effective_chat.id]
-    cur: Vacancy | None = st.get("current")
+    cur = st.get("current")
     if not cur:
-        await update.message.reply_text("Сначала покажи вакансию: /jobs")
+        await update.message.reply_text("Show a vacancy first: /jobs")
         return
     st["saved"].add(cur.id)
     if cur.url:
         st["saved"].add(cur.url)
     _sheets.update_status(cur.url, "saved")
-    await update.message.reply_text("📌 Сохранено")
+    await update.message.reply_text("\U0001f4cc Saved")
 
 
 async def cmd_hide(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     st = _state[update.effective_chat.id]
-    cur: Vacancy | None = st.get("current")
+    cur = st.get("current")
     if cur:
         st["hidden"].add(cur.id)
         if cur.url:
@@ -149,32 +157,42 @@ async def cmd_hide(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await _show_next(update, update.effective_chat.id, ctx)
 
 
-
-
-def _generate_coverletter(chat_id: int) -> str:
+def _generate_coverletter(chat_id: int) -> tuple:
+    """Generate letter, return (cover_letter, vacancy_url)."""
     st = _state[chat_id]
-    cur: Vacancy | None = st.get("current")
+    cur = st.get("current")
     if not cur:
-        raise OpenAIClientError("Сначала покажи вакансию: /jobs")
+        raise OpenAIClientError("Show a vacancy first: /jobs")
 
-    profile = "Python backend разработчик (FastAPI, Telegram-боты, AI automation)."
-    return _openai.generate_cover_letter(
+    letter = _openai.generate_cover_letter(
         vacancy_title=cur.name,
         company=cur.employer,
         requirements=cur.snippet_requirement or "",
-        user_profile=profile,
+        user_profile=settings.user_profile,
     )
+    return letter, cur.url or ""
+
+
+async def _send_coverletter(chat_id: int, reply_fn) -> None:
+    """Generate letter, send it, and save to Sheets."""
+    try:
+        cover_letter, vacancy_url = await asyncio.to_thread(_generate_coverletter, chat_id)
+    except OpenAIClientError as e:
+        await reply_fn(f"\u26a0\ufe0f {e}")
+        return
+
+    await reply_fn(f"\u2709\ufe0f Cover letter:\n\n{cover_letter}")
+
+    if vacancy_url:
+        try:
+            _sheets.update_cover_letter(vacancy_url, cover_letter)
+        except SheetsClientError as e:
+            logger.warning("Failed to save cover letter to sheet: %s", e)
 
 
 async def cmd_coverletter(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
-    try:
-        cover_letter = await asyncio.to_thread(_generate_coverletter, chat_id)
-    except OpenAIClientError as e:
-        await update.message.reply_text(f"⚠️ {e}")
-        return
-
-    await update.message.reply_text(f"✉️ Сопроводительное письмо:\n\n{cover_letter}")
+    await _send_coverletter(chat_id, update.message.reply_text)
 
 
 async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -189,34 +207,29 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         st = _state[update.effective_chat.id]
         if vacancy_id:
             st["saved"].add(vacancy_id)
-            cur: Vacancy | None = st.get("current")
+            cur = st.get("current")
             if cur and cur.id == vacancy_id:
                 if cur.url:
                     st["saved"].add(cur.url)
                 _sheets.update_status(cur.url, "saved")
-            await query.message.reply_text("📌 Сохранено")
+            await query.message.reply_text("\U0001f4cc Saved")
     elif action == "hide":
         st = _state[update.effective_chat.id]
         if vacancy_id:
             st["hidden"].add(vacancy_id)
-            cur: Vacancy | None = st.get("current")
+            cur = st.get("current")
             if cur and cur.id == vacancy_id:
                 if cur.url:
                     st["hidden"].add(cur.url)
                 _sheets.update_status(cur.url, "hidden")
         await _show_next(update, update.effective_chat.id, ctx)
     elif action == "coverletter":
-        try:
-            cover_letter = await asyncio.to_thread(_generate_coverletter, update.effective_chat.id)
-        except OpenAIClientError as e:
-            await query.message.reply_text(f"⚠️ {e}")
-            return
-        await query.message.reply_text(f"✉️ Сопроводительное письмо:\n\n{cover_letter}")
+        await _send_coverletter(update.effective_chat.id, query.message.reply_text)
 
 
 def build_app() -> Application:
     if not settings.telegram_token:
-        raise RuntimeError("TELEGRAM_TOKEN не задан. Заполни .env (см. .env.example).")
+        raise RuntimeError("TELEGRAM_TOKEN not set. Fill .env (see .env.example).")
 
     app = ApplicationBuilder().token(settings.telegram_token).build()
     app.add_handler(CommandHandler("start", cmd_start))

@@ -6,6 +6,24 @@ All notable changes to this project will be documented in this file.
 
 ## [unreleased] — 2026-05-08
 
+### Stage 3 — AI Layer
+
+- `app/services/openai_client.py` — исправлен API-вызов: `responses.create` → `chat.completions.create` (совместимость с openai 1.x); `max_output_tokens` → `max_tokens`
+- `app/core/config.py` — добавлена настройка `user_profile` (переопределяется через `USER_PROFILE` в `.env`)
+- `app/services/sheets_client.py` — новый метод `update_cover_letter(vacancy_url, text)` для сохранения письма в колонку H
+- `app/services/crm_mapper.py` — добавлена колонка `cover_letter` (8-я, заполняется после генерации)
+- `app/bot/main.py`:
+  - `_generate_coverletter()` теперь читает профиль из `settings.user_profile`
+  - выделена `_send_coverletter()` — единая точка отправки и сохранения в Sheets
+  - `cmd_coverletter` и `on_button(coverletter)` используют общую функцию
+- `.env.example` — добавлена переменная `USER_PROFILE`
+- `tests/test_bot_callbacks.py` — обновлены тесты под реальную логику (убран плейсхолдер Stage 3); добавлены тесты на успешную генерацию через инлайн-кнопку
+- `tests/test_bot_state.py` — добавлены тесты `cmd_coverletter`: успех + нет текущей вакансии
+- `tests/test_openai_client.py` — новый файл, 6 тестов: корректный ответ, trim, пустой ключ, пустой ответ, исключение SDK, состав промпта
+- `tests/test_sheets_client.py` — добавлены тесты `update_cover_letter`: успех + URL не найден
+
+---
+
 ### Stage 1 — Foundation
 
 - `app/core/config.py` — добавлены `hh_base_url`, `hh_user_agent`, `extra="ignore"`

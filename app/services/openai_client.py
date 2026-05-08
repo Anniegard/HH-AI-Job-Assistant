@@ -6,42 +6,42 @@ from app.core.config import settings
 
 
 class OpenAIClientError(RuntimeError):
-    """Ошибка генерации сопроводительного письма."""
+    pass
 
 
 class OpenAIClient:
-    def __init__(self, api_key: str | None = None, model: str = "gpt-4o-mini") -> None:
+    def __init__(self, api_key=None, model="gpt-4o-mini"):
         self._api_key = api_key or settings.openai_api_key
         self._model = model
 
-    def generate_cover_letter(self, *, vacancy_title: str, company: str, requirements: str = "", user_profile: str = "") -> str:
+    def generate_cover_letter(self, *, vacancy_title, company, requirements="", user_profile=""):
         if not self._api_key:
-            raise OpenAIClientError("OPENAI_API_KEY не задан. Добавь ключ в .env")
+            raise OpenAIClientError("OPENAI_API_KEY not set. Add key to .env")
 
         client = OpenAI(api_key=self._api_key)
 
         prompt = (
-            "Сгенерируй короткое сопроводительное письмо для отклика на HH.ru. "
-            "Стиль: уверенный, вежливый, без AI-клише и воды. "
-            "Длина: 4-6 предложений, русский язык.\n\n"
-            f"Вакансия: {vacancy_title}\n"
-            f"Компания: {company}\n"
-            f"Требования: {requirements or 'не указаны'}\n"
-            f"Профиль кандидата: {user_profile or 'Python разработчик, AI automation, FastAPI, Telegram bots'}"
+            "Generate a short cover letter for a job application on HH.ru. "
+            "Style: confident, polite, no AI cliches, no filler. "
+            "Length: 4-6 sentences, Russian language.\n\n"
+            f"Vacancy: {vacancy_title}\n"
+            f"Company: {company}\n"
+            f"Requirements: {requirements or 'not specified'}\n"
+            f"Candidate profile: {user_profile or 'Python developer, AI automation, FastAPI, Telegram bots'}"
         )
 
         try:
-            response = client.responses.create(
+            response = client.chat.completions.create(
                 model=self._model,
-                input=prompt,
+                messages=[{"role": "user", "content": prompt}],
                 temperature=0.6,
-                max_output_tokens=220,
+                max_tokens=220,
             )
-            text = (response.output_text or "").strip()
+            text = ((response.choices[0].message.content) or "").strip()
             if not text:
-                raise OpenAIClientError("OpenAI вернул пустой ответ")
+                raise OpenAIClientError("OpenAI returned an empty response")
             return text
         except OpenAIClientError:
             raise
-        except Exception as e:  # noqa: BLE001
-            raise OpenAIClientError(f"Ошибка OpenAI API: {e}") from e
+        except Exception as e:
+            raise OpenAIClientError(f"OpenAI API error: {e}") from e
