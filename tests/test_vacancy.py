@@ -1,5 +1,9 @@
 """Тесты парсинга вакансии (без сети)."""
 
+import pytest
+
+pytest.importorskip("pydantic")
+
 from app.services.vacancy import Vacancy
 
 
