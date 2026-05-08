@@ -18,6 +18,7 @@ from app.core.logging import logger
 from app.scoring.engine import ScoringEngine
 from app.services.crm_mapper import vacancy_to_crm_row
 from app.services.hh_client import HHClient, HHClientError
+from app.services.openai_client import OpenAIClient, OpenAIClientError
 from app.services.sheets_client import SheetsClient, SheetsClientError
 from app.services.vacancy import Vacancy
 
@@ -41,6 +42,7 @@ def _new_state() -> dict:
 _state: dict[int, dict] = defaultdict(_new_state)
 _scorer = ScoringEngine()
 _sheets = SheetsClient()
+_openai = OpenAIClient()
 
 
 def _buttons(vacancy_id: str) -> InlineKeyboardMarkup:
@@ -149,8 +151,30 @@ async def cmd_hide(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 
+def _generate_coverletter(chat_id: int) -> str:
+    st = _state[chat_id]
+    cur: Vacancy | None = st.get("current")
+    if not cur:
+        raise OpenAIClientError("Сначала покажи вакансию: /jobs")
+
+    profile = "Python backend разработчик (FastAPI, Telegram-боты, AI automation)."
+    return _openai.generate_cover_letter(
+        vacancy_title=cur.name,
+        company=cur.employer,
+        requirements=cur.snippet_requirement or "",
+        user_profile=profile,
+    )
+
+
 async def cmd_coverletter(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("Функция будет доступна на Stage 3")
+    chat_id = update.effective_chat.id
+    try:
+        cover_letter = await asyncio.to_thread(_generate_coverletter, chat_id)
+    except OpenAIClientError as e:
+        await update.message.reply_text(f"⚠️ {e}")
+        return
+
+    await update.message.reply_text(f"✉️ Сопроводительное письмо:\n\n{cover_letter}")
 
 
 async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -182,7 +206,12 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 _sheets.update_status(cur.url, "hidden")
         await _show_next(update, update.effective_chat.id, ctx)
     elif action == "coverletter":
-        await query.message.reply_text("Функция будет доступна на Stage 3")
+        try:
+            cover_letter = await asyncio.to_thread(_generate_coverletter, update.effective_chat.id)
+        except OpenAIClientError as e:
+            await query.message.reply_text(f"⚠️ {e}")
+            return
+        await query.message.reply_text(f"✉️ Сопроводительное письмо:\n\n{cover_letter}")
 
 
 def build_app() -> Application:
