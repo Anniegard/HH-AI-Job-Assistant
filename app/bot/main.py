@@ -24,6 +24,7 @@ from app.services.openai_client import OpenAIClient, OpenAIClientError
 from app.services.sheets_client import SheetsClient, SheetsClientError
 from app.services.vacancy import Vacancy
 
+
 def _strip_html(text: str) -> str:
     """Remove HTML tags and normalize whitespace from vacancy description."""
     text = re.sub(r"<[^>]+>", " ", text)
@@ -77,6 +78,24 @@ async def _load_queue(chat_id: int) -> None:
     _state[chat_id]["cursor"] = 0
 
 
+async def _build_scoring_payload(vacancy: Vacancy) -> dict:
+    """Return a dict for ScoringEngine.score that includes the full vacancy
+    description when available.
+
+    Falls back to the snippet (without ``description``) when the HH API call
+    fails for any reason - the scorer must keep working offline.
+    """
+    payload = vacancy.model_dump()
+    try:
+        full = await HHClient().get_vacancy(vacancy.id)
+        description_html = full.get("description", "") or ""
+        payload["description"] = _strip_html(description_html)
+    except HHClientError as e:
+        logger.warning("Failed to fetch full vacancy %s for scoring: %s", vacancy.id, e)
+        payload["description"] = ""
+    return payload
+
+
 async def _show_next(update: Update, chat_id: int, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     st = _state[chat_id]
     if not st["sheet_seen_urls_loaded"]:
@@ -101,7 +120,8 @@ async def _show_next(update: Update, chat_id: int, ctx: ContextTypes.DEFAULT_TYP
         if vacancy_url:
             st["seen"].add(vacancy_url)
         st["current"] = vacancy
-        score, reasons = _scorer.score(vacancy.model_dump())
+        payload = await _build_scoring_payload(vacancy)
+        score, reasons = _scorer.score(payload)
         st["scores"][vacancy.id] = (score, reasons)
         try:
             _sheets.append_vacancy(vacancy_to_crm_row(vacancy, score, reasons, status="viewed"))
@@ -109,7 +129,7 @@ async def _show_next(update: Update, chat_id: int, ctx: ContextTypes.DEFAULT_TYP
             logger.warning("Failed to append viewed vacancy to sheet: %s", e)
         score_line = f"\n\n\U0001f3af Оценка: <b>{score}/100</b>"
         if reasons:
-            score_line += f"\nПочему: {', '.join(reasons[:3])}"
+            score_line += f"\nПочему: {', '.join(reasons[:4])}"
 
         target = update.message if update.message else update.callback_query.message
         await target.reply_text(
@@ -125,7 +145,9 @@ async def _show_next(update: Update, chat_id: int, ctx: ContextTypes.DEFAULT_TYP
 
 
 async def cmd_start(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("\U0001f44b Привет! Команды: /jobs /next /save /hide /coverletter")
+    await update.message.reply_text(
+        "\U0001f44b Привет! Команды: /jobs /next /save /hide /coverletter"
+    )
 
 
 async def cmd_jobs(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -177,7 +199,6 @@ async def _generate_coverletter(chat_id: int) -> tuple:
     if not cur:
         raise OpenAIClientError("Сначала открой вакансию: /jobs")
 
-    # Prefer full vacancy description over the snippet
     full_description = cur.snippet_requirement or ""
     try:
         hh = HHClient()

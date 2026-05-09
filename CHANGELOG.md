@@ -6,6 +6,21 @@ All notable changes to this project will be documented in this file.
 
 ## [unreleased] — 2026-05-09
 
+### Scoring v2 + cover letter style v3 — fix(scoring): improve AI automation vacancy matching
+
+- `app/scoring/engine.py` — полностью переписан `ScoringEngine`. Добавлена нормализация текста (lowercase, ё→е, strip HTML, длинные тире/дефисы → пробел, схлопывание пробелов). Скоринг 0-100 разбит на 5 категорий: A. Target role match (до 30, AI-автоматизации/нейросети/AI-агенты/боты), B. Technical implementation (до 30, Python/FastAPI/API/Telegram/Sheets/OpenAI/n8n/Make/no-code), C. Product/content packaging (до 20, MVP/гипотезы/инструкции/гайды/кейсы/контент/база знаний), D. Working conditions (до 10, удалёнка/гибрид/junior/middle/AI-направление), E. Penalties (до -35, Java/C++/1С/.NET/Ruby/iOS/Android/sales/devops/frontend/heavy ML без automation/senior без AI/офис-only). Поддерживаются и русские, и английские варианты. Reasons возвращаются на русском (`AI-автоматизации`, `боты/AI-ассистенты`, `Python/API/интеграции`, `no-code/low-code`, `контентная упаковка`, `продуктовые гипотезы` и т.п.) с дедупом
+- `app/bot/main.py` — добавлен helper `_build_scoring_payload(vacancy)`: пытается получить полное описание через `HHClient.get_vacancy(id)`, очищает HTML и кладёт в `payload["description"]`; при `HHClientError` — тихий fallback на snippet. `_show_next` теперь скорит по полному payload, а не только по snippet. UI выводит до 4 reasons (`reasons[:4]`)
+- `app/services/openai_client.py` — `build_coverletter_prompt` v3 «живой HH-отклик»: 5-7 коротких абзацев, без подписи, без плейсхолдеров, без длинных тире, без канцелярита («ваша вакансия привлекла моё внимание», «мой опыт будет полезен», «значимый вклад»). Добавлены явные инструкции по выбору главного кейса: для AI automation / AI agents / bots / content automation / API / Sheets / интеграций — главный это `bot-mont-shk` (а не `AI-assistant_for_table_sellers`); вторым идёт `AI-assistant_for_table_sellers`; дополнительно `HH AI Job Assistant`/`Habr Tech Radar Bot`. Ссылки `https://github.com/Anniegard` и `https://anniland.ru/`
+- `profile/resume.md` — `bot-mont-shk` помечен как главный коммерческий кейс (бизнес-автоматизация с измеримым ROI ~150 ч/мес), `AI-assistant_for_table_sellers` явно как демо AI sales assistant. Раздел «Персонализация по типу вакансии» обновлён: для AI automation / AI builder / AI content automation / process / API / Sheets — главный кейс `bot-mont-shk`, не `AI-assistant_for_table_sellers`
+- `tests/test_scoring.py` — переписан под новый движок: `test_webmasters_like_vacancy_scores_high` (>=80 + reasons `AI-автоматизации`, `боты/AI-ассистенты`, `контентная упаковка`), `test_russian_ai_keywords_score_high`, `test_python_automation_vacancy_scores_well`, `test_1c_accountant_does_not_score_high`, `test_java_backend_does_not_score_high`, `test_pure_frontend_role_does_not_score_high`, `test_score_is_clamped_to_0_100`, `test_reasons_are_unique_and_in_russian`, `test_handles_html_tags_in_description`, `test_handles_yo_letter`, `test_office_only_penalty_applied`, плюс юнит-тесты на `normalize_text`
+- `tests/test_openai_client.py` — добавлены `test_prompt_describes_live_hh_response_style`, `test_prompt_picks_bot_mont_shk_for_automation_vacancies`, `test_prompt_warns_against_making_table_assistant_primary`, `test_prompt_forbids_long_dash`, `test_prompt_forbids_generic_phrases`, `test_prompt_includes_github_and_anniland_links`
+
+WebMasters «Специалист по AI-автоматизациям» теперь даёт 90/100 (было 20/100). Все 57 тестов проходят, `python -m compileall app` и `ruff check` чистые.
+
+---
+
+## [unreleased] — 2026-05-09
+
 ### Cover letter style v2
 
 - `profile/resume.md` — новый раздел «Структура письма» (7 шагов) и «Персонализация по типу вакансии» (WB/e-commerce, AI/LLM, Python/API, no-code); формат изменён с «4-6 предложений» на «5-8 абзацев, 1200-2200 символов»; добавлено правило начинать с «Здравствуйте!»

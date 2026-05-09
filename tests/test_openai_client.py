@@ -165,7 +165,6 @@ def test_prompt_specifies_format():
         requirements="",
         resume_context="profile",
     )
-    lower = prompt.lower()
     assert "1200" in prompt
     assert "2200" in prompt
 
