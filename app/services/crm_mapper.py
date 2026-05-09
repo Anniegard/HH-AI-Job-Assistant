@@ -20,6 +20,8 @@ def vacancy_to_crm_job(
     tags: str = "",
     letter: str = "",
     notes: str = "",
+    profile: str = "",
+    last_seen_at: str = "",
 ) -> dict[str, str]:
     """Return a job dict ready for JobCRM.upsert_job."""
     from app.services.job_crm import extract_vacancy_id
@@ -38,6 +40,8 @@ def vacancy_to_crm_job(
         "Letter": letter,
         "notes": notes,
         "updated_at": now,
+        "profile": profile,
+        "last_seen_at": last_seen_at,
     }
 
 

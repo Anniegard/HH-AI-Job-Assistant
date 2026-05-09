@@ -4,6 +4,74 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [unreleased] — 2026-05-10
+
+### Stage 4: Daily AI Job Workflow
+
+**New command `/daily`:**
+- Loads up to 50 candidates from HH API using the active search profile query.
+- Filters hidden/applied/rejected vacancies via CRM `should_skip()`.
+- Deduplicates against within-session `seen` set.
+- Scores all candidates with snippet-only fast payload (no extra HH API calls per vacancy).
+- Applies calibration layer on top of base score.
+- Sorts by calibrated score DESC, selects top `DAILY_TOP_N=5`.
+- Upserts all shown vacancies to CRM with `profile` and `last_seen_at` fields.
+- Sends compact card per vacancy with inline buttons `[Сохранить] [Скрыть] [Письмо]`.
+
+**Search profiles (`app/config/search_profiles.py`):**
+- New `SearchProfile` frozen dataclass: `name`, `display_name`, `query`, `area`, `experience`, `keywords_boost`, `penalties`.
+- Six profiles: `ai_builder`, `python_automation`, `ai_automation`, `fastapi_backend`, `llm_engineer`, `ai_product_engineer`.
+- Default: `ai_builder`. Active profile stored per-chat in bot state (in-memory).
+- Helpers: `get_profile(name)`, `list_profiles()`.
+
+**New commands `/profiles` and `/profile <name>`:**
+- `/profiles` — lists all profiles with ✅ marker on active one.
+- `/profile <name>` — validates and switches active profile, confirms with display_name and query.
+
+**New command `/stats`:**
+- Reads all CRM rows, counts by `status` and `profile` fields.
+- Shows: viewed / saved / letters / applied / hidden totals + per-profile breakdown.
+- No extra infrastructure: derived directly from Google Sheets data.
+
+**Calibration layer (`app/scoring/calibration.py`):**
+- Pure function `calibrate(base_score, text) → int` applied after `ScoringEngine.score_detailed()`.
+- Boosts compound signals not covered by single-term engine rules:
+  - `automation + API integration` → +5
+  - `Telegram + bot` → +4
+  - `Google Sheets + automation` → +4
+  - `LLM/GPT/OpenAI + pipeline/workflow/platform` → +6
+- Penalties for signals complementary to (not overlapping with) engine risk rules:
+  - `"опыт от 5" / "не менее 5 лет" / "минимум 5 лет"` → −8
+  - `"публикации" / "конференции" / "arxiv" / "научная статья"` → −6
+- Result clamped `[0, 100]`.
+
+**Google Sheets CRM schema extension (`app/services/job_crm.py`):**
+- Added `last_seen_at` — ISO timestamp of last `/daily` scan.
+- Added `profile` — search profile name at time of discovery.
+- Both columns added automatically to existing sheets on first access (existing auto-extension logic).
+
+**Updated `app/services/crm_mapper.py`:**
+- `vacancy_to_crm_job()` gains optional `profile=""` and `last_seen_at=""` params.
+- Fully backward-compatible: all existing callers unchanged (new params default to `""`).
+
+**Updated `app/bot/main.py`:**
+- New imports: `dc_replace` (dataclasses.replace), `datetime/timezone`, search profiles, `calibrate`.
+- `_new_state()` gains `active_profile` and `vacancy_cache` keys.
+- New helper `_build_fast_payload(vacancy)` — snippet-only dict, no HH API call.
+- New helper `_daily_buttons(vacancy_id)` — compact 3-button row for daily cards.
+- New helper `_format_daily_card(n, vacancy, result)` — compact `#N Name / Company / Score / +strengths / -risks / URL` card.
+- New helper `_send_coverletter_by_id(chat_id, vacancy_id, reply_fn)` — letter generation for `/daily` cards using `vacancy_cache`; temporarily swaps `st["current"]` with `try/finally` restore.
+- `on_button` extended: `coverletter:{vacancy_id}` routes to `_send_coverletter_by_id`; legacy `coverletter` (no id) routes to existing `_send_coverletter` — backward compatible.
+- `build_app()` registers: `/daily`, `/profiles`, `/profile`, `/stats`.
+- `cmd_start` help text updated with all new commands.
+
+**Tests:**
+- `tests/test_search_profiles.py` — 17 tests: dict completeness, name/key match, display_name/query non-empty, `get_profile`, `list_profiles`, default profile, frozen dataclass, query content checks.
+- `tests/test_calibration.py` — 19 tests: each boost, each penalty, empty text, floor/ceiling clamps, near-boundary clamps, combo specificity (automation without API = no boost, Telegram without bot = no boost), return type.
+- `tests/test_daily_workflow.py` — 24 tests: `_build_fast_payload` structure and scorability, `_format_daily_card` content (rank, score, company, strengths, risks, URL, office warning), `DAILY_TOP_N`, sorting/dedup/filtering logic, empty candidates, `_new_state` keys, profile query validation.
+
+---
+
 ## [unreleased] — 2026-05-09
 
 ### Stage 3.5: Google Sheets as persistent job CRM

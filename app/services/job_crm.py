@@ -46,6 +46,8 @@ REQUIRED_COLUMNS: list[str] = [
     "Letter",
     "notes",
     "updated_at",
+    "last_seen_at",  # ISO timestamp of last /daily scan
+    "profile",       # active search profile name at time of discovery
 ]
 
 # Statuses that should cause a vacancy to be skipped (not shown to user)

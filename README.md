@@ -74,14 +74,18 @@
 
 ---
 
-### Stage 4 — Polish & Deploy `[ планируется ]`
-> Цель: стабильная production-like система
+### Stage 4 — Daily AI Job Workflow `[ завершён ]`
+> Цель: ежедневный AI-ассистент поиска работы — дайджест, профили, умный ранкинг
 
-- [ ] Webhook вместо polling
-- [ ] Деплой на сервер (Railway / VPS)
-- [ ] Планировщик: авторассылка новых вакансий утром
-- [ ] Обработка ошибок и edge cases
-- [ ] Документация API
+- [x] Команда `/daily` — топ-5 вакансий по активному профилю за день
+- [x] 6 поисковых профилей: `ai_builder`, `python_automation`, `ai_automation`, `fastapi_backend`, `llm_engineer`, `ai_product_engineer`
+- [x] Команды `/profiles` (список) и `/profile <name>` (смена профиля)
+- [x] Calibration layer: compound-signal бусты (automation+API, Telegram bot, Google Sheets workflow, LLM platform) и штрафы (строгий опыт 5+, академический исследователь)
+- [x] Компактный daily-формат карточки: #N, компания, оценка, плюсы/минусы, кнопки
+- [x] Кнопка [Letter] в дейли-карточках — письмо для конкретной вакансии
+- [x] Команда `/stats` — статистика CRM по статусам и профилям
+- [x] Новые поля CRM: `last_seen_at`, `profile` (добавляются автоматически в существующий лист)
+- [x] Unit-тесты Stage 4: `test_search_profiles.py`, `test_calibration.py`, `test_daily_workflow.py`
 
 ---
 
@@ -219,15 +223,36 @@ RESUME_MD_PATH=path/to/your_resume.md
 
 | Поле | Описание |
 |---|---|
-| Date | Дата добавления |
-| Vacancy | Название вакансии |
-| Company | Компания |
-| URL | Ссылка на HH |
-| Score | Оценка 0–100 |
-| Status | new / viewed / saved / applied / interview / rejected / offer |
-| Match Reason | Почему подходит |
-| Cover Letter | Сгенерированное письмо |
-| Response | Ответ работодателя |
+| `date` | Дата добавления |
+| `vacancy_id` | HH vacancy ID (первичный ключ) |
+| `Name` | Название вакансии |
+| `Company` | Компания |
+| `Link` | Ссылка на HH |
+| `Score` | Оценка 0–100 |
+| `status` | new / viewed / letter_generated / saved / applied / interview / hidden / rejected |
+| `Tags` | Причины совпадения (до 3) |
+| `Letter` | Сгенерированное письмо |
+| `notes` | Заметки пользователя |
+| `updated_at` | Время последнего обновления |
+| `last_seen_at` | Время последнего показа в /daily |
+| `profile` | Профиль поиска, через который найдена вакансия |
+
+Поля `last_seen_at` и `profile` добавляются автоматически в существующие листы при первом доступе.
+
+---
+
+## 🔍 Профили поиска (Stage 4)
+
+| Профиль | Запрос |
+|---|---|
+| `ai_builder` | AI builder автоматизация Python LLM FastAPI Telegram |
+| `python_automation` | Python автоматизация процессов API интеграция |
+| `ai_automation` | AI автоматизация LLM no-code workflow |
+| `fastapi_backend` | FastAPI Python backend REST API |
+| `llm_engineer` | LLM engineer OpenAI GPT агент RAG |
+| `ai_product_engineer` | AI product Python automation chatbot |
+
+По умолчанию активен профиль `ai_builder`. Профиль хранится в памяти сессии (сбрасывается при перезапуске бота).
 
 ---
 
@@ -235,12 +260,17 @@ RESUME_MD_PATH=path/to/your_resume.md
 
 | Команда | Описание |
 |---|---|
-| `/start` | Приветствие и помощь |
-| `/jobs` | Показать новые вакансии |
-| `/next` | Следующая вакансия |
+| `/start` | Приветствие и список команд |
+| `/daily` | Топ-5 вакансий по активному профилю |
+| `/jobs` | Показать следующую вакансию |
+| `/next` | Пропустить текущую |
 | `/save` | Сохранить текущую |
 | `/hide` | Скрыть / не интересно |
-| `/coverletter` | Сгенерировать сопроводительное |
+| `/coverletter` | Сгенерировать сопроводительное письмо |
+| `/profiles` | Список профилей поиска |
+| `/profile <name>` | Сменить активный профиль |
+| `/stats` | Статистика CRM |
+| `/debug` | Вкл/выкл детальный разбор очков |
 
 ---
 
