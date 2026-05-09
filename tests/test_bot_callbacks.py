@@ -42,6 +42,12 @@ def test_on_button_coverletter_sends_letter(monkeypatch):
 
     fake_letter = "Hello! I want to apply for the Python Dev position."
     monkeypatch.setattr(main._openai, "generate_cover_letter", MagicMock(return_value=fake_letter))
+    # Mock HHClient.get_vacancy to avoid real network calls in tests
+    monkeypatch.setattr(
+        main.HHClient,
+        "get_vacancy",
+        AsyncMock(return_value={"description": "<p>Python developer needed</p>"}),
+    )
     monkeypatch.setattr(
         main,
         "_sheets",

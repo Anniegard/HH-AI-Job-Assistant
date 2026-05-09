@@ -46,6 +46,15 @@ class Settings(BaseSettings):
     google_sheet_name: str = "CRM"
     google_credentials_path: str = "credentials.json"
 
+    # Cover letter generation style.
+    # "full"  -> 5-8 paragraphs, 1200-2200 chars (for relevant vacancies)
+    # "short" -> 4-6 sentences (legacy behaviour)
+    # Override via COVER_LETTER_STYLE in .env
+    cover_letter_style: str = "full"
+    # Max target character count for the generated letter.
+    # Override via COVER_LETTER_MAX_CHARS in .env
+    cover_letter_max_chars: int = 2200
+
     # App
     debug: bool = False
     log_level: str = "INFO"

@@ -6,6 +6,19 @@ All notable changes to this project will be documented in this file.
 
 ## [unreleased] — 2026-05-09
 
+### Cover letter style v2
+
+- `profile/resume.md` — новый раздел «Структура письма» (7 шагов) и «Персонализация по типу вакансии» (WB/e-commerce, AI/LLM, Python/API, no-code); формат изменён с «4-6 предложений» на «5-8 абзацев, 1200-2200 символов»; добавлено правило начинать с «Здравствуйте!»
+- `app/services/openai_client.py` — промпт v2: убран запрет приветствия, добавлена структура из 7 пунктов (приветствие, почему вакансия, главный проект, AI-кейсы, стек, рабочий подход, ссылки); вставлены ссылки github.com/anniegard и anniland.ru; `max_tokens` 220→800, `temperature` 0.6→0.7
+- `app/core/config.py` — добавлены настройки `cover_letter_style: str = "full"` и `cover_letter_max_chars: int = 2200` (переопределяются через `.env`)
+- `app/bot/main.py` — `_generate_coverletter` стала async; добавлена `_strip_html()` для очистки HTML; загружает полное описание вакансии через `HHClient.get_vacancy()` с fallback на snippet при ошибке HH API
+- `tests/test_openai_client.py` — тест `test_prompt_specifies_sentence_count` заменён на `test_prompt_specifies_format` (проверяет 1200/2200) и `test_prompt_starts_with_greeting_instruction`
+- `tests/test_bot_callbacks.py` — добавлен `AsyncMock` для `HHClient.get_vacancy` чтобы избежать реальных сетевых вызовов в тестах
+
+---
+
+## [unreleased] — 2026-05-09
+
 ### Stage 3.5 — Resume Context
 
 - `profile/resume.md` — новый файл с профилем кандидата: целевые роли, стек, AI-инструменты, проекты (bot-mont-shk, anniland.ru, AI-assistant_for_table_sellers, Habr Tech Radar Bot, HH AI Job Assistant) и правила стиля писем

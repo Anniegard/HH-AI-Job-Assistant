@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections import defaultdict
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -22,6 +23,13 @@ from app.services.hh_client import HHClient, HHClientError
 from app.services.openai_client import OpenAIClient, OpenAIClientError
 from app.services.sheets_client import SheetsClient, SheetsClientError
 from app.services.vacancy import Vacancy
+
+def _strip_html(text: str) -> str:
+    """Remove HTML tags and normalize whitespace from vacancy description."""
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
 
 DEFAULT_QUERY = "Python AI automation"
 DEFAULT_PER_PAGE = 20
@@ -158,17 +166,34 @@ async def cmd_hide(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await _show_next(update, update.effective_chat.id, ctx)
 
 
-def _generate_coverletter(chat_id: int) -> tuple:
-    """Generate letter, return (cover_letter, vacancy_url)."""
+async def _generate_coverletter(chat_id: int) -> tuple:
+    """Generate letter, return (cover_letter, vacancy_url).
+
+    Tries to fetch the full vacancy description via HH API for better
+    prompt quality. Falls back to snippet_requirement on any error.
+    """
     st = _state[chat_id]
     cur = st.get("current")
     if not cur:
         raise OpenAIClientError("Сначала открой вакансию: /jobs")
 
-    letter = _openai.generate_cover_letter(
+    # Prefer full vacancy description over the snippet
+    full_description = cur.snippet_requirement or ""
+    try:
+        hh = HHClient()
+        full_vacancy = await hh.get_vacancy(cur.id)
+        desc_html = full_vacancy.get("description", "") or ""
+        cleaned = _strip_html(desc_html)
+        if cleaned:
+            full_description = cleaned
+    except HHClientError as e:
+        logger.warning("Failed to fetch full vacancy %s: %s", cur.id, e)
+
+    letter = await asyncio.to_thread(
+        _openai.generate_cover_letter,
         vacancy_title=cur.name,
         company=cur.employer,
-        requirements=cur.snippet_requirement or "",
+        requirements=full_description,
         user_profile=load_resume_context(),
     )
     return letter, cur.url or ""
@@ -177,7 +202,7 @@ def _generate_coverletter(chat_id: int) -> tuple:
 async def _send_coverletter(chat_id: int, reply_fn) -> None:
     """Generate letter, send it, and save to Sheets."""
     try:
-        cover_letter, vacancy_url = await asyncio.to_thread(_generate_coverletter, chat_id)
+        cover_letter, vacancy_url = await _generate_coverletter(chat_id)
     except OpenAIClientError as e:
         await reply_fn(f"⚠️ {e}")
         return
@@ -249,3 +274,14 @@ async def main() -> None:
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
+    logger.info("Bot started. Press Ctrl+C to stop.")
+    try:
+        await asyncio.Event().wait()
+    finally:
+        await app.updater.stop()
+        await app.stop()
+        await app.shutdown()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

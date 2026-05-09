@@ -157,12 +157,25 @@ def test_prompt_requires_russian():
     assert "русск" in lower
 
 
-def test_prompt_specifies_sentence_count():
-    """Prompt must specify the 4-6 sentence length limit."""
+def test_prompt_specifies_format():
+    """Prompt must specify multi-paragraph format and character count."""
     prompt = build_coverletter_prompt(
         vacancy_title="Dev",
         company="Co",
         requirements="",
         resume_context="profile",
     )
-    assert "4" in prompt and "6" in prompt
+    lower = prompt.lower()
+    assert "1200" in prompt
+    assert "2200" in prompt
+
+
+def test_prompt_starts_with_greeting_instruction():
+    """Prompt must instruct to start with greeting."""
+    prompt = build_coverletter_prompt(
+        vacancy_title="Dev",
+        company="Co",
+        requirements="",
+        resume_context="profile",
+    )
+    assert "\u0417\u0434\u0440\u0430\u0432\u0441\u0442\u0432\u0443\u0439\u0442\u0435" in prompt
