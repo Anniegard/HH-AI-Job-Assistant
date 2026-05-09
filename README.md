@@ -57,6 +57,23 @@
 
 ---
 
+### Stage 3.5 — Google Sheets as persistent job CRM `[ завершён ]`
+> Цель: Sheet как надёжная БД вакансий, без дублей и с сохранением статусов между сессиями
+
+- [x] `vacancy_id` из HH как первичный ключ строки
+- [x] `JobCRM` сервис (`app/services/job_crm.py`) поверх Google Sheets:
+  - `load_jobs()`, `get_job_by_vacancy_id()`, `upsert_job()`
+  - `update_status()`, `save_letter()`, `is_known()`, `should_skip()`
+- [x] Приоритеты статусов: `new → viewed → letter_generated → saved → applied → interview`
+- [x] Ручные финальные статусы `hidden` / `rejected` — не перезаписываются ботом
+- [x] Письмо (`Letter`) и заметки (`notes`) не затираются пустым значением
+- [x] Upsert по `vacancy_id`: нет дублей при повторном показе вакансии
+- [x] Кнопки Telegram обновляют Sheet напрямую через CRM
+- [x] Обратная совместимость: старые листы без новых колонок расширяются автоматически
+- [x] Unit-тесты: `tests/test_job_crm.py` (29 тестов)
+
+---
+
 ### Stage 4 — Polish & Deploy `[ планируется ]`
 > Цель: стабильная production-like система
 

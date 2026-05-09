@@ -18,10 +18,11 @@ from app.core.config import settings
 from app.core.logging import logger
 from app.core.resume import load_resume_context
 from app.scoring.engine import ScoringEngine, ScoringResult
-from app.services.crm_mapper import vacancy_to_crm_row
+from app.services.crm_mapper import vacancy_to_crm_job
 from app.services.hh_client import HHClient, HHClientError
+from app.services.job_crm import JobCRM
 from app.services.openai_client import OpenAIClient, OpenAIClientError
-from app.services.sheets_client import SheetsClient, SheetsClientError
+from app.services.sheets_client import SheetsClientError
 from app.services.vacancy import Vacancy
 
 
@@ -41,18 +42,18 @@ def _new_state() -> dict:
         "queue": [],
         "cursor": 0,
         "current": None,
+        # Within-session dedup set — prevents showing the same vacancy twice
+        # in one session.  Cross-session state lives in the CRM / Sheet.
         "seen": set(),
-        "saved": set(),
-        "hidden": set(),
         "scores": {},
-        "sheet_seen_urls_loaded": False,
+        "crm_loaded": False,
         "debug": False,
     }
 
 
 _state: dict[int, dict] = defaultdict(_new_state)
 _scorer = ScoringEngine()
-_sheets = SheetsClient()
+_crm = JobCRM()
 _openai = OpenAIClient()
 
 
@@ -144,12 +145,14 @@ def _format_debug_block(result: ScoringResult) -> str:
 
 async def _show_next(update: Update, chat_id: int, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     st = _state[chat_id]
-    if not st["sheet_seen_urls_loaded"]:
+
+    # Load CRM state once per session so should_skip() queries are in-memory.
+    if not st["crm_loaded"]:
         try:
-            st["seen"].update(_sheets.list_seen_urls())
+            _crm.load_jobs()
         except SheetsClientError as e:
-            logger.warning("Failed to preload seen vacancies from sheet: %s", e)
-        st["sheet_seen_urls_loaded"] = True
+            logger.warning("Failed to preload CRM state from sheet: %s", e)
+        st["crm_loaded"] = True
 
     if not st["queue"] or st["cursor"] >= len(st["queue"]):
         await _load_queue(chat_id)
@@ -157,26 +160,32 @@ async def _show_next(update: Update, chat_id: int, ctx: ContextTypes.DEFAULT_TYP
     while st["cursor"] < len(st["queue"]):
         vacancy = st["queue"][st["cursor"]]
         st["cursor"] += 1
-        vacancy_url = vacancy.url.strip()
-        seen_by_url = bool(vacancy_url) and vacancy_url in st["seen"]
-        hidden_by_url = bool(vacancy_url) and vacancy_url in st["hidden"]
-        if vacancy.id in st["seen"] or seen_by_url or vacancy.id in st["hidden"] or hidden_by_url:
-            continue
-        st["seen"].add(vacancy.id)
-        if vacancy_url:
-            st["seen"].add(vacancy_url)
-        st["current"] = vacancy
-        payload = await _build_scoring_payload(vacancy)
 
+        # Within-session dedup (same vacancy appearing twice in API results)
+        if vacancy.id in st["seen"]:
+            continue
+        # Cross-session skip: hidden / applied / rejected in CRM
+        if _crm.should_skip(vacancy.id):
+            logger.info("Skipping vacancy %s (CRM status)", vacancy.id)
+            continue
+
+        st["seen"].add(vacancy.id)
+        st["current"] = vacancy
+
+        payload = await _build_scoring_payload(vacancy)
         result: ScoringResult = _scorer.score_detailed(payload)
         score = result.total_score
         reasons = result.strengths + result.risks
         st["scores"][vacancy.id] = result
 
+        # Upsert into CRM with status="viewed" (won't downgrade an existing
+        # higher-priority status such as "saved").
         try:
-            _sheets.append_vacancy(vacancy_to_crm_row(vacancy, score, reasons, status="viewed"))
+            _crm.upsert_job(
+                vacancy_to_crm_job(vacancy, score, reasons, status="viewed")
+            )
         except SheetsClientError as e:
-            logger.warning("Failed to append viewed vacancy to sheet: %s", e)
+            logger.warning("Failed to upsert viewed vacancy to CRM: %s", e)
 
         score_block = _format_score_block(result)
         if st.get("debug"):
@@ -233,10 +242,10 @@ async def cmd_save(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     if not cur:
         await update.message.reply_text("Сначала открой вакансию: /jobs")
         return
-    st["saved"].add(cur.id)
-    if cur.url:
-        st["saved"].add(cur.url)
-    _sheets.update_status(cur.url, "saved")
+    try:
+        _crm.update_status(cur.id, "saved")
+    except SheetsClientError as e:
+        logger.warning("Failed to save status to CRM: %s", e)
     await update.message.reply_text("\U0001f4cc Сохранено")
 
 
@@ -244,15 +253,15 @@ async def cmd_hide(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     st = _state[update.effective_chat.id]
     cur = st.get("current")
     if cur:
-        st["hidden"].add(cur.id)
-        if cur.url:
-            st["hidden"].add(cur.url)
-        _sheets.update_status(cur.url, "hidden")
+        try:
+            _crm.update_status(cur.id, "hidden")
+        except SheetsClientError as e:
+            logger.warning("Failed to hide vacancy in CRM: %s", e)
     await _show_next(update, update.effective_chat.id, ctx)
 
 
 async def _generate_coverletter(chat_id: int) -> tuple:
-    """Generate letter, return (cover_letter_text, vacancy_url)."""
+    """Generate letter, return (cover_letter_text, vacancy_id)."""
     st = _state[chat_id]
     cur = st.get("current")
     if not cur:
@@ -281,24 +290,24 @@ async def _generate_coverletter(chat_id: int) -> tuple:
         strengths=scoring_result.strengths if scoring_result else None,
         risks=scoring_result.risks if scoring_result else None,
     )
-    return letter, cur.url or ""
+    return letter, cur.id or ""
 
 
 async def _send_coverletter(chat_id: int, reply_fn) -> None:
-    """Generate letter, send it, and save to Sheets."""
+    """Generate letter, send it, and save to CRM."""
     try:
-        cover_letter, vacancy_url = await _generate_coverletter(chat_id)
+        cover_letter, vacancy_id = await _generate_coverletter(chat_id)
     except OpenAIClientError as e:
         await reply_fn(f"\u26a0\ufe0f {e}")
         return
 
-    await reply_fn(f"\u2709\ufe0f Сопроводительное письмо:\n\n{cover_letter}")
+    await reply_fn(f"\u2709\ufe0f \u0421\u043e\u043f\u0440\u043e\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c\u043d\u043e\u0435 \u043f\u0438\u0441\u044c\u043c\u043e:\n\n{cover_letter}")
 
-    if vacancy_url:
+    if vacancy_id:
         try:
-            _sheets.update_cover_letter(vacancy_url, cover_letter)
+            _crm.save_letter(vacancy_id, cover_letter)
         except SheetsClientError as e:
-            logger.warning("Failed to save cover letter to sheet: %s", e)
+            logger.warning("Failed to save cover letter to CRM: %s", e)
 
 
 async def cmd_coverletter(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
@@ -315,24 +324,18 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if action == "next":
         await _show_next(update, update.effective_chat.id, ctx)
     elif action == "save":
-        st = _state[update.effective_chat.id]
         if vacancy_id:
-            st["saved"].add(vacancy_id)
-            cur = st.get("current")
-            if cur and cur.id == vacancy_id:
-                if cur.url:
-                    st["saved"].add(cur.url)
-                _sheets.update_status(cur.url, "saved")
+            try:
+                _crm.update_status(vacancy_id, "saved")
+            except SheetsClientError as e:
+                logger.warning("Failed to save vacancy in CRM: %s", e)
             await query.message.reply_text("\U0001f4cc Сохранено")
     elif action == "hide":
-        st = _state[update.effective_chat.id]
         if vacancy_id:
-            st["hidden"].add(vacancy_id)
-            cur = st.get("current")
-            if cur and cur.id == vacancy_id:
-                if cur.url:
-                    st["hidden"].add(cur.url)
-                _sheets.update_status(cur.url, "hidden")
+            try:
+                _crm.update_status(vacancy_id, "hidden")
+            except SheetsClientError as e:
+                logger.warning("Failed to hide vacancy in CRM: %s", e)
         await _show_next(update, update.effective_chat.id, ctx)
     elif action == "coverletter":
         await _send_coverletter(update.effective_chat.id, query.message.reply_text)

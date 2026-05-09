@@ -165,8 +165,8 @@ def test_prompt_specifies_format():
         requirements="",
         resume_context="profile",
     )
-    assert "1200" in prompt
-    assert "2200" in prompt
+    assert "1000" in prompt
+    assert "1500" in prompt
 
 
 def test_prompt_starts_with_greeting_instruction():

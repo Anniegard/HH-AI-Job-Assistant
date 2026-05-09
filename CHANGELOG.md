@@ -6,6 +6,57 @@ All notable changes to this project will be documented in this file.
 
 ## [unreleased] — 2026-05-09
 
+### Stage 3.5: Google Sheets as persistent job CRM
+
+**Primary key:** `vacancy_id` (numeric ID from `https://hh.ru/vacancy/<id>`) is now the canonical key for every row in the sheet. The helper `extract_vacancy_id(link)` extracts it from any HH URL or accepts a raw numeric string.
+
+**New service — `app/services/job_crm.py`:**
+- `JobCRM` wraps `SheetsClient` and exposes a high-level CRM API.
+- `load_jobs()` — full re-read from Sheet into in-memory cache; subsequent calls are served from cache.
+- `get_job_by_vacancy_id(vacancy_id)` — O(1) cache lookup.
+- `upsert_job(job_dict)` — insert a new row or update an existing one without creating duplicates.
+- `update_status(vacancy_id, status)` — update status respecting priority order.
+- `save_letter(vacancy_id, letter)` — save cover letter + upgrade status to `letter_generated`.
+- `is_known(vacancy_id)` / `should_skip(vacancy_id)` — fast in-memory checks.
+
+**Status priority (lowest → highest):** `new → viewed → letter_generated → saved → applied → interview`.
+Manual final statuses (`hidden`, `rejected`) are never overwritten by automatic bot actions.
+`Letter` and `notes` columns are never overwritten with empty values.
+
+**Sheet schema** (`REQUIRED_COLUMNS`):
+`date · vacancy_id · Name · Company · Link · Score · status · Tags · Letter · notes · updated_at`
+Old sheets without these columns are extended automatically on first access.
+
+**Updated `app/services/crm_mapper.py`:**
+- New `vacancy_to_crm_job()` returns a `dict` for `JobCRM.upsert_job()`.
+- Legacy `vacancy_to_crm_row()` kept for backward compatibility.
+- `CRM_HEADERS` now mirrors `REQUIRED_COLUMNS`; old tuple available as `CRM_HEADERS_LEGACY`.
+
+**Updated `app/services/sheets_client.py`:**
+- Added `read_all_values()`, `update_header_row()`, `update_row()`, `append_row()`.
+- Added `_col_letter()` helper for A1 column notation.
+- All existing methods preserved.
+
+**Updated `app/bot/main.py`:**
+- `_sheets` replaced by `_crm = JobCRM()` for all CRM operations.
+- `_show_next()` loads CRM state once per session (`crm_loaded` flag) and calls `crm.should_skip()` to filter hidden/applied/rejected vacancies across sessions.
+- Vacancy shown → `_crm.upsert_job({..., "status": "viewed"})` (no downgrade if already saved).
+- Buttons `Save` / `Hide` → `_crm.update_status(vacancy_id, ...)`.
+- `coverletter` → `_crm.save_letter(vacancy_id, letter)`.
+- Removed `saved` / `hidden` in-memory sets; cross-session state lives in the Sheet.
+
+**Tests (`tests/test_job_crm.py`)** — 29 new unit tests:
+- `extract_vacancy_id` from URLs and raw IDs.
+- `upsert_job` creates a new row / updates existing row.
+- Letter not overwritten by empty value.
+- Status not downgraded automatically.
+- `should_skip` True for `hidden/applied/rejected`, False for all others.
+- Backward compatibility: old sheet schema extended without crashing.
+
+Updated `tests/test_bot_state.py` and `tests/test_bot_callbacks.py` to mock `_crm` instead of `_sheets`.
+
+---
+
 ### Scoring v2 + cover letter style v3 — fix(scoring): improve AI automation vacancy matching
 
 - `app/scoring/engine.py` — полностью переписан `ScoringEngine`. Добавлена нормализация текста (lowercase, ё→е, strip HTML, длинные тире/дефисы → пробел, схлопывание пробелов). Скоринг 0-100 разбит на 5 категорий: A. Target role match (до 30, AI-автоматизации/нейросети/AI-агенты/боты), B. Technical implementation (до 30, Python/FastAPI/API/Telegram/Sheets/OpenAI/n8n/Make/no-code), C. Product/content packaging (до 20, MVP/гипотезы/инструкции/гайды/кейсы/контент/база знаний), D. Working conditions (до 10, удалёнка/гибрид/junior/middle/AI-направление), E. Penalties (до -35, Java/C++/1С/.NET/Ruby/iOS/Android/sales/devops/frontend/heavy ML без automation/senior без AI/офис-only). Поддерживаются и русские, и английские варианты. Reasons возвращаются на русском (`AI-автоматизации`, `боты/AI-ассистенты`, `Python/API/интеграции`, `no-code/low-code`, `контентная упаковка`, `продуктовые гипотезы` и т.п.) с дедупом

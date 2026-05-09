@@ -11,6 +11,17 @@ except ImportError:
     _GoogleHttpError = Exception  # type: ignore[assignment,misc]
 
 
+def _col_letter(n: int) -> str:
+    """Convert 0-indexed column number to A1 column letter (A, B, ..., Z, AA, ...)."""
+    result = ""
+    while True:
+        result = chr(ord("A") + n % 26) + result
+        n = n // 26 - 1
+        if n < 0:
+            break
+    return result
+
+
 class SheetsClientError(RuntimeError):
     pass
 
@@ -100,3 +111,44 @@ class SheetsClient:
 
     def list_seen_ids(self) -> set[str]:
         return self.list_seen_urls()
+
+    # ------------------------------------------------------------------
+    # Low-level primitives for JobCRM (Stage 3.5)
+    # ------------------------------------------------------------------
+
+    def read_all_values(self) -> list[list[str]]:
+        """Read the entire sheet as a 2-D list of strings (row 0 = headers)."""
+        raw = self._exec(
+            self._values.get(spreadsheetId=self.sheet_id, range=f"{self._sheet}!A:ZZ")
+        ).get("values", [])
+        return [[str(cell) for cell in row] for row in raw]
+
+    def update_header_row(self, headers: list[str]) -> None:
+        """Overwrite row 1 (the header row) with *headers*."""
+        end = _col_letter(len(headers) - 1)
+        self._exec(self._values.update(
+            spreadsheetId=self.sheet_id,
+            range=f"{self._sheet}!A1:{end}1",
+            valueInputOption="RAW",
+            body={"values": [headers]},
+        ))
+
+    def update_row(self, row_idx: int, values: list[Any]) -> None:
+        """Overwrite a full row at 1-based *row_idx* with *values*."""
+        end = _col_letter(len(values) - 1)
+        self._exec(self._values.update(
+            spreadsheetId=self.sheet_id,
+            range=f"{self._sheet}!A{row_idx}:{end}{row_idx}",
+            valueInputOption="RAW",
+            body={"values": [values]},
+        ))
+
+    def append_row(self, values: list[Any]) -> None:
+        """Append a single data row after the last populated row."""
+        self._exec(self._values.append(
+            spreadsheetId=self.sheet_id,
+            range=f"{self._sheet}!A:A",
+            valueInputOption="RAW",
+            insertDataOption="INSERT_ROWS",
+            body={"values": [values]},
+        ))
