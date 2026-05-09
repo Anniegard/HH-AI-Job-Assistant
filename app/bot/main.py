@@ -339,14 +339,24 @@ async def _send_coverletter(chat_id: int, reply_fn) -> None:
 
 
 async def _send_coverletter_by_id(chat_id: int, vacancy_id: str, reply_fn) -> None:
-    """Generate letter for a specific vacancy_id — used by /daily cards."""
+    """Generate letter for a specific vacancy_id — used by /daily cards.
+
+    If the vacancy is not in the session cache (e.g. after bot restart or
+    cache eviction), falls back to fetching it from HH API before generating.
+    """
     st = _state[chat_id]
     vacancy = st["vacancy_cache"].get(vacancy_id)
     if not vacancy:
-        await reply_fn(
-            "⚠️ Вакансия не найдена в кэше сессии. Попробуй /daily снова."
-        )
-        return
+        try:
+            raw = await HHClient().get_vacancy(vacancy_id)
+            vacancy = Vacancy.from_hh(raw)
+            st["vacancy_cache"][vacancy_id] = vacancy
+        except HHClientError as e:
+            logger.warning("Fallback HH fetch failed for vacancy %s: %s", vacancy_id, e)
+            await reply_fn(
+                "⚠️ Не удалось загрузить вакансию. Попробуй /daily снова."
+            )
+            return
     original_current = st["current"]
     st["current"] = vacancy
     try:
