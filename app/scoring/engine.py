@@ -83,6 +83,11 @@ class ScoringResult:
     risks: list = field(default_factory=list)
     recommendation: str = ""
     is_remote: bool = True
+    # Per-component labels for debug output
+    role_labels: list = field(default_factory=list)
+    task_labels: list = field(default_factory=list)
+    stack_labels: list = field(default_factory=list)
+    growth_labels: list = field(default_factory=list)
 
 
 Rule = tuple
@@ -305,6 +310,10 @@ class ScoringEngine:
             risks=risk_labels,
             recommendation=_build_recommendation(total),
             is_remote=is_remote,
+            role_labels=role_labels,
+            task_labels=task_labels,
+            stack_labels=stack_labels,
+            growth_labels=growth_labels,
         )
 
     def score(self, vacancy: dict) -> tuple:

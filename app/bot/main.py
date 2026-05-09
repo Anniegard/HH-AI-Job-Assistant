@@ -46,6 +46,7 @@ def _new_state() -> dict:
         "hidden": set(),
         "scores": {},
         "sheet_seen_urls_loaded": False,
+        "debug": False,
     }
 
 
@@ -64,7 +65,7 @@ def _buttons(vacancy_id: str) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton("\U0001f4cc Сохранить", callback_data=f"save:{vacancy_id}"),
-                InlineKeyboardButton("✉ Письмо", callback_data="coverletter"),
+                InlineKeyboardButton("\u2709 Письмо", callback_data="coverletter"),
             ],
         ]
     )
@@ -97,16 +98,47 @@ def _format_score_block(result: ScoringResult) -> str:
     lines.append(f"\n\n\U0001f3af <b>Оценка: {result.total_score}/100</b>")
 
     if not result.is_remote:
-        lines.append("⚠️ <b>Формат: офис</b> (не удалённая/гибридная)")
+        lines.append("\u26a0\ufe0f <b>Формат: офис</b> (не удалённая/гибридная)")
 
     if result.strengths:
         top = ", ".join(result.strengths[:4])
-        lines.append(f"✅ Совпадения: {top}")
+        lines.append(f"\u2705 Совпадения: {top}")
 
     if result.risks:
         top_risks = ", ".join(result.risks[:3])
-        lines.append(f"⚠️ Риски: {top_risks}")
+        lines.append(f"\u26a0\ufe0f Риски: {top_risks}")
 
+    return "\n".join(lines)
+
+
+def _format_debug_block(result: ScoringResult) -> str:
+    """Format detailed per-component score breakdown for debug mode."""
+    from app.scoring.engine import GROWTH_FIT_MAX, ROLE_FIT_MAX, STACK_FIT_MAX, TASK_FIT_MAX
+
+    def _labels(lst: list) -> str:
+        return ", ".join(lst) if lst else "\u2014"
+
+    lines = ["\n\n\U0001f50d <b>Debug: разбивка очков</b>"]
+    lines.append(
+        f"  role   {result.role_fit:>3}/{ROLE_FIT_MAX}  "
+        f"\u2192 {_labels(result.role_labels)}"
+    )
+    lines.append(
+        f"  task   {result.task_fit:>3}/{TASK_FIT_MAX}  "
+        f"\u2192 {_labels(result.task_labels)}"
+    )
+    lines.append(
+        f"  stack  {result.stack_fit:>3}/{STACK_FIT_MAX}  "
+        f"\u2192 {_labels(result.stack_labels)}"
+    )
+    lines.append(
+        f"  growth {result.growth_fit:>3}/{GROWTH_FIT_MAX}  "
+        f"\u2192 {_labels(result.growth_labels)}"
+    )
+    risk_str = _labels(result.risks) if result.risks else "\u2014"
+    lines.append(f"  risk   {result.risk_penalty:>4}     \u2192 {risk_str}")
+    lines.append(f"  <b>итого  {result.total_score:>3}/100</b>")
+    lines.append(f"  {result.recommendation}")
     return "\n".join(lines)
 
 
@@ -147,6 +179,8 @@ async def _show_next(update: Update, chat_id: int, ctx: ContextTypes.DEFAULT_TYP
             logger.warning("Failed to append viewed vacancy to sheet: %s", e)
 
         score_block = _format_score_block(result)
+        if st.get("debug"):
+            score_block += _format_debug_block(result)
         target = update.message if update.message else update.callback_query.message
         await target.reply_text(
             vacancy.short_text() + score_block,
@@ -162,8 +196,21 @@ async def _show_next(update: Update, chat_id: int, ctx: ContextTypes.DEFAULT_TYP
 
 async def cmd_start(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "\U0001f44b Привет! Команды: /jobs /next /save /hide /coverletter"
+        "\U0001f44b Привет! Команды:\n"
+        "/jobs — следующая вакансия\n"
+        "/next — пропустить\n"
+        "/save — сохранить\n"
+        "/hide — скрыть\n"
+        "/coverletter — письмо\n"
+        "/debug — вкл/выкл разбивку очков"
     )
+
+
+async def cmd_debug(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+    st = _state[update.effective_chat.id]
+    st["debug"] = not st.get("debug", False)
+    status = "включён \U0001f50d" if st["debug"] else "выключен"
+    await update.message.reply_text(f"Debug-режим {status}")
 
 
 async def cmd_jobs(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -173,7 +220,7 @@ async def cmd_jobs(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await _show_next(update, chat_id, ctx)
     except HHClientError as e:
         logger.error(f"HH error: {e}")
-        await update.message.reply_text(f"⚠️ Ошибка HH API: {e}")
+        await update.message.reply_text(f"\u26a0\ufe0f Ошибка HH API: {e}")
 
 
 async def cmd_next(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -242,10 +289,10 @@ async def _send_coverletter(chat_id: int, reply_fn) -> None:
     try:
         cover_letter, vacancy_url = await _generate_coverletter(chat_id)
     except OpenAIClientError as e:
-        await reply_fn(f"⚠️ {e}")
+        await reply_fn(f"\u26a0\ufe0f {e}")
         return
 
-    await reply_fn(f"✉️ Сопроводительное письмо:\n\n{cover_letter}")
+    await reply_fn(f"\u2709\ufe0f Сопроводительное письмо:\n\n{cover_letter}")
 
     if vacancy_url:
         try:
@@ -302,6 +349,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("save", cmd_save))
     app.add_handler(CommandHandler("hide", cmd_hide))
     app.add_handler(CommandHandler("coverletter", cmd_coverletter))
+    app.add_handler(CommandHandler("debug", cmd_debug))
     app.add_handler(CallbackQueryHandler(on_button))
     return app
 

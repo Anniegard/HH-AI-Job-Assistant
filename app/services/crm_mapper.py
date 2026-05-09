@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from app.services.vacancy import Vacancy
 
@@ -9,7 +9,7 @@ CRM_HEADERS = ("date", "vacancy", "company", "url", "score", "status", "reason",
 
 def vacancy_to_crm_row(vacancy: Vacancy, score: int, reasons: list[str], status: str) -> list[str]:
     return [
-        datetime.now(UTC).isoformat(),
+        datetime.now(timezone.utc).isoformat(),
         vacancy.name,
         vacancy.employer,
         vacancy.url,
