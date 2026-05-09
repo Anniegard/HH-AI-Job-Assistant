@@ -6,7 +6,6 @@ pytest.importorskip("pydantic")
 
 from app.services.vacancy import Vacancy
 
-
 SAMPLE_HH_ITEM = {
     "id": "12345",
     "name": "Python Developer (AI Automation)",

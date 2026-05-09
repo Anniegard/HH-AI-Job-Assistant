@@ -17,7 +17,7 @@ from telegram.ext import (
 from app.core.config import settings
 from app.core.logging import logger
 from app.core.resume import load_resume_context
-from app.scoring.engine import ScoringEngine
+from app.scoring.engine import ScoringEngine, ScoringResult
 from app.services.crm_mapper import vacancy_to_crm_row
 from app.services.hh_client import HHClient, HHClientError
 from app.services.openai_client import OpenAIClient, OpenAIClientError
@@ -79,12 +79,7 @@ async def _load_queue(chat_id: int) -> None:
 
 
 async def _build_scoring_payload(vacancy: Vacancy) -> dict:
-    """Return a dict for ScoringEngine.score that includes the full vacancy
-    description when available.
-
-    Falls back to the snippet (without ``description``) when the HH API call
-    fails for any reason - the scorer must keep working offline.
-    """
+    """Return a dict for ScoringEngine including full description when available."""
     payload = vacancy.model_dump()
     try:
         full = await HHClient().get_vacancy(vacancy.id)
@@ -94,6 +89,25 @@ async def _build_scoring_payload(vacancy: Vacancy) -> dict:
         logger.warning("Failed to fetch full vacancy %s for scoring: %s", vacancy.id, e)
         payload["description"] = ""
     return payload
+
+
+def _format_score_block(result: ScoringResult) -> str:
+    """Format the scoring block for Telegram display."""
+    lines: list[str] = []
+    lines.append(f"\n\n\U0001f3af <b>Оценка: {result.total_score}/100</b>")
+
+    if not result.is_remote:
+        lines.append("⚠️ <b>Формат: офис</b> (не удалённая/гибридная)")
+
+    if result.strengths:
+        top = ", ".join(result.strengths[:4])
+        lines.append(f"✅ Совпадения: {top}")
+
+    if result.risks:
+        top_risks = ", ".join(result.risks[:3])
+        lines.append(f"⚠️ Риски: {top_risks}")
+
+    return "\n".join(lines)
 
 
 async def _show_next(update: Update, chat_id: int, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -121,19 +135,21 @@ async def _show_next(update: Update, chat_id: int, ctx: ContextTypes.DEFAULT_TYP
             st["seen"].add(vacancy_url)
         st["current"] = vacancy
         payload = await _build_scoring_payload(vacancy)
-        score, reasons = _scorer.score(payload)
-        st["scores"][vacancy.id] = (score, reasons)
+
+        result: ScoringResult = _scorer.score_detailed(payload)
+        score = result.total_score
+        reasons = result.strengths + result.risks
+        st["scores"][vacancy.id] = result
+
         try:
             _sheets.append_vacancy(vacancy_to_crm_row(vacancy, score, reasons, status="viewed"))
         except SheetsClientError as e:
             logger.warning("Failed to append viewed vacancy to sheet: %s", e)
-        score_line = f"\n\n\U0001f3af Оценка: <b>{score}/100</b>"
-        if reasons:
-            score_line += f"\nПочему: {', '.join(reasons[:4])}"
 
+        score_block = _format_score_block(result)
         target = update.message if update.message else update.callback_query.message
         await target.reply_text(
-            vacancy.short_text() + score_line,
+            vacancy.short_text() + score_block,
             parse_mode=ParseMode.HTML,
             disable_web_page_preview=True,
             reply_markup=_buttons(vacancy.id),
@@ -189,15 +205,13 @@ async def cmd_hide(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def _generate_coverletter(chat_id: int) -> tuple:
-    """Generate letter, return (cover_letter, vacancy_url).
-
-    Tries to fetch the full vacancy description via HH API for better
-    prompt quality. Falls back to snippet_requirement on any error.
-    """
+    """Generate letter, return (cover_letter_text, vacancy_url)."""
     st = _state[chat_id]
     cur = st.get("current")
     if not cur:
         raise OpenAIClientError("Сначала открой вакансию: /jobs")
+
+    scoring_result: ScoringResult | None = st["scores"].get(cur.id)
 
     full_description = cur.snippet_requirement or ""
     try:
@@ -216,6 +230,9 @@ async def _generate_coverletter(chat_id: int) -> tuple:
         company=cur.employer,
         requirements=full_description,
         user_profile=load_resume_context(),
+        score=scoring_result.total_score if scoring_result else None,
+        strengths=scoring_result.strengths if scoring_result else None,
+        risks=scoring_result.risks if scoring_result else None,
     )
     return letter, cur.url or ""
 

@@ -44,7 +44,7 @@ class Vacancy(BaseModel):
     published_at: str | None = None
 
     @classmethod
-    def from_hh(cls, raw: dict[str, Any]) -> "Vacancy":
+    def from_hh(cls, raw: dict[str, Any]) -> Vacancy:
         """Парсинг одного элемента из items[] ответа /vacancies."""
         snippet = raw.get("snippet") or {}
         salary_raw = raw.get("salary")

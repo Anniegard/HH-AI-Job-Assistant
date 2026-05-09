@@ -1,4 +1,5 @@
 import pytest
+
 pytest.importorskip("telegram")
 pytest.importorskip("pydantic_settings")
 

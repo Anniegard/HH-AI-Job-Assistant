@@ -1,4 +1,5 @@
 import pytest
+
 pytest.importorskip("pydantic_settings")
 
 from unittest.mock import MagicMock
